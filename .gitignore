@@ -1,0 +1,9 @@
+node_modules/
+dist/
+*.log
+server/agenda.db
+server/agenda.db-*
+server/.env
+server/.env.*
+!server/.env.example
+.vscode/
