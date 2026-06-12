@@ -1,4 +1,4 @@
-const BASE = '/api';
+const BASE = (import.meta.env.VITE_API_URL || '') + '/api';
 
 // Notifica a la app cuando se pierde/recupera la conexión con el servidor
 function emitApiStatus(ok) {
