@@ -1,0 +1,44 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+
+# Permisos para que Actions pueda desplegar en Pages
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Genera el archivo config.js con los secretos inyectados
+      - name: Generar config.js
+        run: |
+          cat > config.js << EOF
+          const CONFIG = {
+            DATABASE_URL: "${{ secrets.DATABASE_URL }}",
+            OUTLOOK_ICS_URL: "${{ secrets.OUTLOOK_ICS_URL }}"
+          };
+          EOF
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: '.'   # raíz del repo, cambia si tu web está en otra carpeta
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
