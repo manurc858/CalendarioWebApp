@@ -2,6 +2,7 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
 export default defineConfig({
+  base: '/agenda-manuel-ruiz/',
   plugins: [react()],
   optimizeDeps: {
     include: ['flowbite-datepicker'],
@@ -11,8 +12,8 @@ export default defineConfig({
     proxy: {
       '/api': {
         target: 'http://localhost:4000',
-        timeout: 600000,       // 10 min
-        proxyTimeout: 600000,  // 10 min
+        timeout: 600000,
+        proxyTimeout: 600000,
       }
     }
   }
