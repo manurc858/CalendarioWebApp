@@ -1,16 +1,33 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from '../api.js';
+import FlowbiteDateInput from './FlowbiteDateInput.jsx';
 
 export default function CreateMeetingModal({ initialDate, onClose, onCreated }) {
+  const dialogRef = useRef(null);
+  const restoreFocusRef = useRef(null);
+  const endTimeRef = useRef(null);
   const [date, setDate] = useState(initialDate || '');
   const [title, setTitle] = useState('');
   const [startTime, setStartTime] = useState('');
   const [endTime, setEndTime] = useState('');
   const [allDay, setAllDay] = useState(false);
 
+  useEffect(() => {
+    const endInput = endTimeRef.current;
+    if (!endInput) return;
+
+    if (allDay || !startTime || !endTime || endTime > startTime) {
+      endInput.setCustomValidity('');
+      return;
+    }
+
+    endInput.setCustomValidity('La hora de fin debe ser posterior a la hora de inicio.');
+  }, [allDay, startTime, endTime]);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!date || !title.trim()) return;
+    if (!e.currentTarget.reportValidity()) return;
+
     await api.createCustomMeeting({
       date,
       title: title.trim(),
@@ -22,12 +39,42 @@ export default function CreateMeetingModal({ initialDate, onClose, onCreated }) 
     onClose();
   };
 
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+
+    restoreFocusRef.current = document.activeElement;
+    if (!dialog.open) dialog.showModal();
+
+    const onCancel = (e) => {
+      e.preventDefault();
+      onClose();
+    };
+
+    const onBackdropClick = (e) => {
+      if (e.target === dialog) onClose();
+    };
+
+    dialog.addEventListener('cancel', onCancel);
+    dialog.addEventListener('click', onBackdropClick);
+
+    return () => {
+      dialog.removeEventListener('cancel', onCancel);
+      dialog.removeEventListener('click', onBackdropClick);
+      if (dialog.open) dialog.close();
+      const toFocus = restoreFocusRef.current;
+      if (toFocus && typeof toFocus.focus === 'function' && document.contains(toFocus)) {
+        requestAnimationFrame(() => toFocus.focus());
+      }
+    };
+  }, [onClose]);
+
   return (
-    <div className="mn-editor-overlay" onClick={onClose}>
-      <div className="mn-editor mn-editor-sm" onClick={e => e.stopPropagation()}>
+    <dialog ref={dialogRef} className="mn-editor-dialog" aria-labelledby="create-meeting-dialog-title">
+      <div className="mn-editor mn-editor-sm">
         <div className="mn-editor-head">
-          <h3>📅 Nueva reunión</h3>
-          <button className="btn btn-icon" onClick={onClose}>✕</button>
+          <h3 id="create-meeting-dialog-title">📅 Nueva reunión</h3>
+          <button type="button" className="btn btn-icon" onClick={onClose} aria-label="Cerrar modal">✕</button>
         </div>
         <form onSubmit={handleSubmit} className="cm-form">
           <div className="cm-field">
@@ -38,16 +85,19 @@ export default function CreateMeetingModal({ initialDate, onClose, onCreated }) 
               onChange={e => setTitle(e.target.value)}
               placeholder="Nombre de la reunión…"
               className="inline-input"
+              required
+              minLength={2}
               autoFocus
             />
           </div>
           <div className="cm-field">
             <label>Fecha</label>
-            <input
-              type="date"
+            <FlowbiteDateInput
               value={date}
-              onChange={e => setDate(e.target.value)}
+              onValueChange={setDate}
               className="inline-input"
+              required
+              placeholder="Selecciona fecha"
             />
           </div>
           <div className="cm-field cm-checkbox">
@@ -69,15 +119,18 @@ export default function CreateMeetingModal({ initialDate, onClose, onCreated }) 
                   value={startTime}
                   onChange={e => setStartTime(e.target.value)}
                   className="inline-input"
+                  required={!allDay}
                 />
               </div>
               <div className="cm-field">
                 <label>Fin</label>
                 <input
+                  ref={endTimeRef}
                   type="time"
                   value={endTime}
                   onChange={e => setEndTime(e.target.value)}
                   className="inline-input"
+                  required={!allDay}
                 />
               </div>
             </div>
@@ -88,6 +141,6 @@ export default function CreateMeetingModal({ initialDate, onClose, onCreated }) 
           </div>
         </form>
       </div>
-    </div>
+    </dialog>
   );
 }

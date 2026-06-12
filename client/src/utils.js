@@ -62,6 +62,7 @@ export function fmtHours(minutes) {
 
 export function calcMeetingHours(meetings = []) {
   return meetings.reduce((total, m) => {
+    if (m.attending === false || m.attending === 0) return total;
     if (m.allDay || !m.startTime || !m.endTime) return total;
     const [sh, sm] = m.startTime.split(':').map(Number);
     const [eh, em] = m.endTime.split(':').map(Number);
@@ -76,9 +77,30 @@ export function isWeekend(date) {
 }
 
 // Devuelve el "tipo efectivo" del día: el del backend si existe, si no laborable/finde por defecto
-export function effectiveLabor(date, laborMap) {
+export function effectiveLabor(date, laborMap = {}) {
   const key = iso(date);
-  if (laborMap[key]) return laborMap[key];
+  if (laborMap && laborMap[key]) return laborMap[key];
   if (isWeekend(date)) return { type: 'finde', label: null };
   return { type: 'laborable', label: null };
+}
+
+export function availableWorkHoursForDate(date, laborMap = {}) {
+  const effectiveType = effectiveLabor(date, laborMap);
+  if (effectiveType.type !== 'laborable') return 0;
+
+  const day = date.getDay();
+  if (day === 5) return 6;
+  if (day >= 1 && day <= 4) return 8.75;
+  return 0;
+}
+
+export function availableWorkHoursForMonth(year, month, laborMap = {}) {
+  const lastDay = new Date(year, month + 1, 0).getDate();
+  let total = 0;
+
+  for (let day = 1; day <= lastDay; day += 1) {
+    total += availableWorkHoursForDate(new Date(year, month, day), laborMap);
+  }
+
+  return total;
 }

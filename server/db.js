@@ -30,7 +30,8 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     date TEXT,
     text TEXT NOT NULL,
-    done INTEGER NOT NULL DEFAULT 0
+    done INTEGER NOT NULL DEFAULT 0,
+    sort_order INTEGER NOT NULL DEFAULT 0
   );
 
   CREATE TABLE IF NOT EXISTS events (
@@ -64,6 +65,14 @@ db.exec(`
   );
 `);
 
+// Migration: add parent_id to todos for carry-over (multi-day tasks)
+try {
+  const cols = db.prepare("PRAGMA table_info(todos)").all();
+  if (!cols.find(c => c.name === 'parent_id')) {
+    db.exec('ALTER TABLE todos ADD COLUMN parent_id INTEGER REFERENCES todos(id) ON DELETE SET NULL');
+  }
+} catch (_) { /* ignore */ }
+
 // Migration: allow NULL date in todos for unassigned tasks
 try {
   const cols = db.prepare("PRAGMA table_info(todos)").all();
@@ -74,9 +83,11 @@ try {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         date TEXT,
         text TEXT NOT NULL,
-        done INTEGER NOT NULL DEFAULT 0
+        done INTEGER NOT NULL DEFAULT 0,
+        sort_order INTEGER NOT NULL DEFAULT 0
       );
-      INSERT INTO todos_new SELECT * FROM todos;
+      INSERT INTO todos_new(id, date, text, done, sort_order)
+      SELECT id, date, text, done, id FROM todos;
       DROP TABLE todos;
       ALTER TABLE todos_new RENAME TO todos;
     `);
@@ -84,6 +95,22 @@ try {
 } catch (e) {
   console.error('Migration error:', e.message);
 }
+
+try {
+  const todoCols = db.prepare("PRAGMA table_info(todos)").all();
+  if (!todoCols.find(c => c.name === 'sort_order')) {
+    db.exec('ALTER TABLE todos ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0');
+  }
+  db.exec(`
+    WITH ranked AS (
+      SELECT id, ROW_NUMBER() OVER (PARTITION BY COALESCE(date, '__unassigned__') ORDER BY sort_order, id) AS rn
+      FROM todos
+    )
+    UPDATE todos
+    SET sort_order = (SELECT rn FROM ranked WHERE ranked.id = todos.id)
+    WHERE id IN (SELECT id FROM ranked)
+  `);
+} catch (_) { /* ignore */ }
 
 // ajustes por defecto
 const hasSetting = db.prepare('SELECT 1 FROM settings WHERE key = ?');
@@ -122,6 +149,22 @@ try {
   }
 } catch (_) { /* ignore */ }
 
+// tabla outlook_meetings_cache: copia diaria de reuniones de Outlook
+db.exec(`
+  CREATE TABLE IF NOT EXISTS outlook_meetings_cache (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    uid TEXT NOT NULL,
+    date TEXT NOT NULL,
+    title TEXT NOT NULL,
+    start_time TEXT,
+    end_time TEXT,
+    all_day INTEGER NOT NULL DEFAULT 0,
+    teams_url TEXT,
+    cached_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(uid, date)
+  );
+`);
+
 // tabla meeting_projects: vincula reuniones (uid+date) a proyectos
 db.exec(`
   CREATE TABLE IF NOT EXISTS meeting_projects (
@@ -158,6 +201,42 @@ db.exec(`
     notes TEXT NOT NULL DEFAULT '',
     links TEXT NOT NULL DEFAULT '',
     UNIQUE(meeting_type, meeting_ref, meeting_date)
+  );
+`);
+
+// tabla meeting_attendance: marca reuniones como no asistidas para excluirlas de horas
+db.exec(`
+  CREATE TABLE IF NOT EXISTS meeting_attendance (
+    uid TEXT NOT NULL,
+    date TEXT NOT NULL,
+    attending INTEGER NOT NULL DEFAULT 1,
+    PRIMARY KEY (uid, date)
+  );
+`);
+
+// -------- Chat AI: conversaciones, mensajes y snapshots --------
+db.exec(`
+  CREATE TABLE IF NOT EXISTS chat_conversations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL DEFAULT 'Nueva conversación',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS chat_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    conversation_id INTEGER NOT NULL,
+    role TEXT NOT NULL,
+    content TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY(conversation_id) REFERENCES chat_conversations(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS ai_snapshots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    snapshot_date TEXT NOT NULL UNIQUE,
+    data TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 `);
 

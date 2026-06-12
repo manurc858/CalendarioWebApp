@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from '../api.js';
 import { diffMinutes, fmtHours, LABOR_TYPES, effectiveLabor } from '../utils.js';
+import FlowbiteDropdown from './FlowbiteDropdown.jsx';
 
 const DEFAULT_SLOTS = [
   { start_time: '07:45', end_time: '13:30' },
@@ -8,16 +9,50 @@ const DEFAULT_SLOTS = [
 ];
 
 export default function DayEditModal({ date, onClose, projects, laborMap }) {
+  const dialogRef = useRef(null);
+  const restoreFocusRef = useRef(null);
   const [data, setData] = useState({ work: [], todos: [], events: [] });
+  const [openWorkNotes, setOpenWorkNotes] = useState({});
   const [loading, setLoading] = useState(true);
   const effectiveType = effectiveLabor(new Date(date + 'T00:00:00'), laborMap);
 
   const reload = async () => {
     setLoading(true);
     setData(await api.getDay(date));
+    setOpenWorkNotes({});
     setLoading(false);
   };
   useEffect(() => { reload(); }, [date]);
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+
+    restoreFocusRef.current = document.activeElement;
+    if (!dialog.open) dialog.showModal();
+
+    const onCancel = (e) => {
+      e.preventDefault();
+      onClose();
+    };
+
+    const onBackdropClick = (e) => {
+      if (e.target === dialog) onClose();
+    };
+
+    dialog.addEventListener('cancel', onCancel);
+    dialog.addEventListener('click', onBackdropClick);
+
+    return () => {
+      dialog.removeEventListener('cancel', onCancel);
+      dialog.removeEventListener('click', onBackdropClick);
+      if (dialog.open) dialog.close();
+      const toFocus = restoreFocusRef.current;
+      if (toFocus && typeof toFocus.focus === 'function' && document.contains(toFocus)) {
+        requestAnimationFrame(() => toFocus.focus());
+      }
+    };
+  }, [onClose]);
 
   const totalMin = data.work.reduce((a, w) => a + diffMinutes(w.start_time, w.end_time), 0);
 
@@ -54,6 +89,24 @@ export default function DayEditModal({ date, onClose, projects, laborMap }) {
     reload();
   };
 
+  const submitWorkForm = async (e, i) => {
+    e.preventDefault();
+    const formElement = e.currentTarget;
+    const form = workForms[i];
+    const endInput = formElement.querySelector('input[name="end_time"]');
+
+    if (endInput) {
+      if (form.start_time && form.end_time && form.end_time <= form.start_time) {
+        endInput.setCustomValidity('La hora de fin debe ser posterior a la hora de inicio.');
+      } else {
+        endInput.setCustomValidity('');
+      }
+    }
+
+    if (!formElement.reportValidity()) return;
+    await addWork(i);
+  };
+
   const addTodo = async (e) => {
     e.preventDefault();
     if (!todoText.trim()) return;
@@ -70,6 +123,10 @@ export default function DayEditModal({ date, onClose, projects, laborMap }) {
     reload();
   };
 
+  const toggleWorkNote = (workId) => {
+    setOpenWorkNotes(prev => ({ ...prev, [workId]: !prev[workId] }));
+  };
+
   const parsed = new Date(date + 'T00:00:00');
   const pretty = parsed.toLocaleDateString('es-ES', {
     weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
@@ -78,11 +135,11 @@ export default function DayEditModal({ date, onClose, projects, laborMap }) {
   if (loading) return null;
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={e => e.stopPropagation()}>
+    <dialog ref={dialogRef} className="modal-dialog" aria-labelledby="day-edit-modal-title">
+      <div className="modal">
         <header className="modal-head">
           <div>
-            <div className="modal-date">{pretty.charAt(0).toUpperCase() + pretty.slice(1)}</div>
+            <div id="day-edit-modal-title" className="modal-date">{pretty.charAt(0).toUpperCase() + pretty.slice(1)}</div>
             {effectiveType.label && (
               <div className="modal-labor"
                    style={{ background: LABOR_TYPES[effectiveType.type].color, color: LABOR_TYPES[effectiveType.type].text }}>
@@ -94,7 +151,7 @@ export default function DayEditModal({ date, onClose, projects, laborMap }) {
             <span className="muted">Total</span>
             <strong>{fmtHours(totalMin)}</strong>
           </div>
-          <button className="btn btn-icon" onClick={onClose} aria-label="Cerrar">✕</button>
+          <button type="button" className="btn btn-icon" onClick={onClose} aria-label="Cerrar">✕</button>
         </header>
 
         <div className="modal-body">
@@ -103,41 +160,57 @@ export default function DayEditModal({ date, onClose, projects, laborMap }) {
             <h3>⏱ Horas de trabajo</h3>
             <ul className="list">
               {data.work.map(w => (
-                <li key={w.id} className="list-item">
+                <li key={w.id} className={`list-item ${openWorkNotes[w.id] ? 'note-open' : ''}`}>
                   <span className="swatch" style={{ background: w.project_color || '#4f8cff' }} />
                   <div className="li-main">
                     <div><b>{w.start_time} – {w.end_time}</b> <span className="muted">({fmtHours(diffMinutes(w.start_time, w.end_time))})</span></div>
                     <div className="muted small">{w.project_name || 'Sin proyecto'}</div>
-                    {w.note && <div className="day-entry-note" style={{display:'none'}}>{w.note}</div>}
+                    {w.note && openWorkNotes[w.id] && <div className="day-entry-note">{w.note}</div>}
                   </div>
-                  {w.note && <button className="note-tri" onClick={e => { const note = e.currentTarget.closest('.list-item').querySelector('.day-entry-note'); note.style.display = note.style.display === 'none' ? '' : 'none'; e.currentTarget.classList.toggle('open'); }} title="Ver nota">▶</button>}
-                  <button className="btn btn-link danger" onClick={async () => { await api.deleteWork(w.id); reload(); }}>Eliminar</button>
+                  {w.note && (
+                    <button
+                      type="button"
+                      className={`note-tri ${openWorkNotes[w.id] ? 'open' : ''}`}
+                      onClick={() => toggleWorkNote(w.id)}
+                      aria-expanded={!!openWorkNotes[w.id]}
+                      title="Ver nota"
+                    >▶</button>
+                  )}
+                  <button type="button" className="btn btn-link danger" onClick={async () => { await api.deleteWork(w.id); reload(); }}>Eliminar</button>
                 </li>
               ))}
             </ul>
 
             <div className="work-forms">
               {workForms.map((form, i) => (
-                <div key={i} className="work-form">
-                  <input type="time" value={form.start_time}
+                <form key={i} className="work-form" onSubmit={(e) => submitWorkForm(e, i)}>
+                  <input type="time" name="start_time" value={form.start_time}
+                         required
                          onChange={e => updateWorkForm(i, 'start_time', e.target.value)} />
                   <span className="sep">→</span>
-                  <input type="time" value={form.end_time}
+                  <input type="time" name="end_time" value={form.end_time}
+                         required
                          onChange={e => updateWorkForm(i, 'end_time', e.target.value)} />
-                  <select value={form.project_id}
-                          onChange={e => updateWorkForm(i, 'project_id', e.target.value)}>
-                    <option value="">— Proyecto —</option>
-                    {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                  </select>
+                  <FlowbiteDropdown
+                    className="inline-select"
+                    value={form.project_id}
+                    onChange={(nextProject) => updateWorkForm(i, 'project_id', nextProject)}
+                    options={[
+                      { value: '', label: '— Proyecto —' },
+                      ...projects.map(p => ({ value: String(p.id), label: p.name })),
+                    ]}
+                    ariaLabel="Proyecto"
+                  />
                   <input type="text" placeholder="Nota"
+                         maxLength={500}
                          value={form.note}
                          onChange={e => updateWorkForm(i, 'note', e.target.value)} />
-                  <button className="btn btn-primary" onClick={() => addWork(i)}>Añadir</button>
-                  <button className="btn btn-ghost" onClick={() => removeWorkForm(i)}>Borrar</button>
-                </div>
+                  <button type="submit" className="btn btn-primary">Añadir</button>
+                  <button type="button" className="btn btn-ghost" onClick={() => removeWorkForm(i)}>Borrar</button>
+                </form>
               ))}
             </div>
-            <button className="btn btn-ghost" onClick={addWorkForm}>+ Otra entrada</button>
+            <button type="button" className="btn btn-ghost" onClick={addWorkForm}>+ Otra entrada</button>
           </section>
 
           {/* TODOS */}
@@ -151,12 +224,12 @@ export default function DayEditModal({ date, onClose, projects, laborMap }) {
                   <div className="li-main">
                     <span className={t.done ? 'done' : ''}>{t.text}</span>
                   </div>
-                  <button className="btn btn-link danger" onClick={async () => { await api.deleteTodo(t.id); reload(); }}>Eliminar</button>
+                  <button type="button" className="btn btn-link danger" onClick={async () => { await api.deleteTodo(t.id); reload(); }}>Eliminar</button>
                 </li>
               ))}
             </ul>
             <form className="form-row" onSubmit={addTodo}>
-              <input type="text" placeholder="Nueva tarea…" value={todoText} onChange={e => setTodoText(e.target.value)} />
+              <input type="text" placeholder="Nueva tarea…" value={todoText} onChange={e => setTodoText(e.target.value)} required minLength={2} maxLength={160} />
               <button className="btn btn-primary" type="submit">Añadir</button>
             </form>
           </section>
@@ -169,23 +242,29 @@ export default function DayEditModal({ date, onClose, projects, laborMap }) {
                 <li key={ev.id} className="list-item">
                   <span className={`badge ${ev.kind}`}>{ev.kind === 'delivery' ? 'Entrega' : 'Evento'}</span>
                   <div className="li-main">{ev.title}</div>
-                  <button className="btn btn-link danger" onClick={async () => { await api.deleteEvent(ev.id); reload(); }}>Eliminar</button>
+                  <button type="button" className="btn btn-link danger" onClick={async () => { await api.deleteEvent(ev.id); reload(); }}>Eliminar</button>
                 </li>
               ))}
             </ul>
             <form className="form-row" onSubmit={addEvent}>
-              <select value={eventForm.kind}
-                      onChange={e => setEventForm({ ...eventForm, kind: e.target.value })}>
-                <option value="event">Evento</option>
-                <option value="delivery">Entrega</option>
-              </select>
+              <FlowbiteDropdown
+                className="inline-select"
+                value={eventForm.kind}
+                onChange={(nextKind) => setEventForm({ ...eventForm, kind: nextKind })}
+                options={[
+                  { value: 'event', label: 'Evento' },
+                  { value: 'delivery', label: 'Entrega' },
+                ]}
+                ariaLabel="Tipo de evento"
+              />
               <input type="text" placeholder="Título…" value={eventForm.title}
+                required minLength={2} maxLength={160}
                      onChange={e => setEventForm({ ...eventForm, title: e.target.value })} />
               <button className="btn btn-primary" type="submit">Añadir</button>
             </form>
           </section>
         </div>
       </div>
-    </div>
+    </dialog>
   );
 }

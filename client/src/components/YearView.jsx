@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { LABOR_TYPES, MONTH_NAMES, iso, isWeekend, calcMeetingHours } from '../utils.js';
 import { api } from '../api.js';
 
@@ -7,8 +7,19 @@ export default function YearView({
 }) {
   const [painting, setPainting] = useState(false);
   const [popup, setPopup] = useState(null); // { date, data, x, y }
+  const [openWorkNotes, setOpenWorkNotes] = useState({});
   const [loading, setLoading] = useState(false);
   const [eventDates, setEventDates] = useState(new Set());
+  const popupRef = useRef(null);
+  const lastTriggerRef = useRef(null);
+
+  const closePopup = useCallback(() => {
+    setPopup(null);
+    const trigger = lastTriggerRef.current;
+    if (trigger && typeof trigger.focus === 'function' && document.contains(trigger)) {
+      requestAnimationFrame(() => trigger.focus());
+    }
+  }, []);
 
   // Load events for the whole year to show dots
   useEffect(() => {
@@ -35,12 +46,39 @@ export default function YearView({
     return arr;
   }, [year]);
 
-  // Close popup on Escape
   useEffect(() => {
-    const fn = (e) => { if (e.key === 'Escape') setPopup(null); };
-    window.addEventListener('keydown', fn);
-    return () => window.removeEventListener('keydown', fn);
-  }, []);
+    if (!popup) return;
+
+    const popupNode = popupRef.current;
+    if (!popupNode) return;
+
+    const onToggle = (event) => {
+      if (event.newState === 'closed') closePopup();
+    };
+
+    popupNode.addEventListener('toggle', onToggle);
+    requestAnimationFrame(() => {
+      if (typeof popupNode.showPopover === 'function' && !popupNode.matches(':popover-open')) {
+        popupNode.showPopover();
+      }
+      popupNode.focus();
+    });
+
+    return () => {
+      popupNode.removeEventListener('toggle', onToggle);
+      if (typeof popupNode.hidePopover === 'function' && popupNode.matches(':popover-open')) {
+        popupNode.hidePopover();
+      }
+    };
+  }, [popup]);
+
+  useEffect(() => {
+    setOpenWorkNotes({});
+  }, [popup?.date]);
+
+  const toggleWorkNote = (workId) => {
+    setOpenWorkNotes(prev => ({ ...prev, [workId]: !prev[workId] }));
+  };
 
   const handleClick = async (d, e) => {
     if (!d) return;
@@ -52,6 +90,7 @@ export default function YearView({
       else onChange(key, activeType);
     } else {
       // Open day detail popup
+      lastTriggerRef.current = e.currentTarget;
       setLoading(true);
       setPopup(null);
       try {
@@ -65,7 +104,9 @@ export default function YearView({
         if (y + 300 > vh) y = vh - 310;
         if (x < 10) x = 10;
         if (y < 10) y = 10;
-        setPopup({ date: key, data, x, y });
+        const title = new Date(key + 'T00:00:00')
+          .toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' });
+        setPopup({ date: key, data, x, y, title });
       } catch { /* ignore */ }
       setLoading(false);
     }
@@ -79,7 +120,7 @@ export default function YearView({
       <div className="yv-toolbar">
         <button
           className={`yv-pincel-btn ${painting ? 'active' : ''}`}
-          onClick={() => { setPainting(p => !p); setPopup(null); }}
+          onClick={() => { setPainting(p => !p); closePopup(); }}
         >
           🖌️ {painting ? 'Pincel activo' : 'Activar pincel'}
         </button>
@@ -147,15 +188,24 @@ export default function YearView({
         const pMeet = calcMeetingHours(popup.data.meetings);
         const pTotal = pWork + pMeet;
         const pPct = pTarget > 0 ? Math.min(100, (pTotal / pTarget) * 100) : 0;
-        const prettyDate = pd.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' });
+        const prettyDate = popup.title;
+        const popupTitleId = `year-popup-title-${popup.date}`;
 
         return (
         <>
-          <div className="yv-popup-overlay" onClick={() => setPopup(null)} />
-          <div className="yv-popup" style={{ left: popup.x, top: popup.y }}>
+          <div
+            ref={popupRef}
+            className="yv-popup"
+            style={{ left: popup.x, top: popup.y }}
+            popover="auto"
+            role="dialog"
+            aria-modal="false"
+            aria-labelledby={popupTitleId}
+            tabIndex={-1}
+          >
             <div className="yv-popup-head">
-              <span className="yv-popup-date">{prettyDate.charAt(0).toUpperCase() + prettyDate.slice(1)}</span>
-              <button className="yv-popup-close" onClick={() => setPopup(null)}>✕</button>
+              <span id={popupTitleId} className="yv-popup-date">{prettyDate.charAt(0).toUpperCase() + prettyDate.slice(1)}</span>
+              <button type="button" className="yv-popup-close" onClick={closePopup} aria-label="Cerrar detalle del día">✕</button>
             </div>
             {pTarget > 0 && (
               <div className="day-progress" style={{ margin: '0', borderRadius: 0, borderBottom: '1px solid var(--line)' }}>
@@ -174,17 +224,28 @@ export default function YearView({
                 <div className="yv-popup-label">🕐 Horarios</div>
                 {popup.data.work.length === 0
                   ? <span className="yv-popup-empty">Sin registros</span>
-                  : popup.data.work.map(w => (
-                    <div key={w.id} className="yv-popup-work-item">
+                  : popup.data.work.map(w => {
+                    const isOpen = !!openWorkNotes[w.id];
+                    return (
+                    <div key={w.id} className={`yv-popup-work-item ${isOpen ? 'note-open' : ''}`}>
                       <div className="yv-popup-work-top">
                         <span className="yv-popup-work-swatch" style={{ background: w.project_color || '#4f8cff' }} />
                         <span className="yv-popup-proj">{w.project_name || 'Sin proyecto'}</span>
                         <span className="yv-popup-hours">{w.hours}h</span>
-                        {w.note && <button className="note-tri" onClick={e => e.currentTarget.closest('.yv-popup-work-item').classList.toggle('note-open')} title="Ver nota">▶</button>}
+                        {w.note && (
+                          <button
+                            type="button"
+                            className={`note-tri ${isOpen ? 'open' : ''}`}
+                            onClick={() => toggleWorkNote(w.id)}
+                            aria-expanded={isOpen}
+                            title="Ver nota"
+                          >▶</button>
+                        )}
                       </div>
                       {w.note && <div className="yv-popup-work-note">{w.note}</div>}
                     </div>
-                  ))
+                    );
+                  })
                 }
               </div>
 

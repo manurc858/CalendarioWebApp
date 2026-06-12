@@ -1,17 +1,47 @@
 import { useEffect, useState, useRef } from 'react';
 import { api } from '../api.js';
-import { fmtHours, LABOR_TYPES, effectiveLabor, calcMeetingHours } from '../utils.js';
+import { fmtHours, LABOR_TYPES, effectiveLabor, calcMeetingHours, iso, addDays } from '../utils.js';
 import MeetingNotesEditor from './MeetingNotesEditor.jsx';
 import CreateMeetingModal from './CreateMeetingModal.jsx';
+import FlowbiteDropdown from './FlowbiteDropdown.jsx';
+
+function insertTodoAt(todos, draggedId, beforeId = null) {
+  const dragged = todos.find(todo => todo.id === draggedId);
+  if (!dragged) return todos;
+
+  const withoutDragged = todos.filter(todo => todo.id !== draggedId);
+  if (beforeId == null) return [...withoutDragged, dragged];
+
+  const insertIndex = withoutDragged.findIndex(todo => todo.id === beforeId);
+  if (insertIndex === -1) return [...withoutDragged, dragged];
+
+  return [
+    ...withoutDragged.slice(0, insertIndex),
+    dragged,
+    ...withoutDragged.slice(insertIndex),
+  ];
+}
+
+function getBeforeIdByPointer(event, currentId, nextId) {
+  const rect = event.currentTarget.getBoundingClientRect();
+  const ratio = (event.clientY - rect.top) / Math.max(rect.height, 1);
+  return ratio <= 0.5 ? currentId : (nextId ?? null);
+}
 
 export default function DayDetailPanel({ date, laborMap, projects, onReload }) {
   const [data, setData] = useState({ work: [], todos: [], events: [], meetings: [] });
   const [loading, setLoading] = useState(true);
+  const [insertTarget, setInsertTarget] = useState(null);
+  const [openWorkNotes, setOpenWorkNotes] = useState({});
 
   // Inline form states
   const [newHours, setNewHours] = useState('');
   const [newProjectId, setNewProjectId] = useState('');
   const [newNote, setNewNote] = useState('');
+  const [editingWorkId, setEditingWorkId] = useState(null);
+  const [editHours, setEditHours] = useState('');
+  const [editProjectId, setEditProjectId] = useState('');
+  const [editNote, setEditNote] = useState('');
   const [todoText, setTodoText] = useState('');
   const [eventTitle, setEventTitle] = useState('');
   const [eventKind, setEventKind] = useState('event');
@@ -35,18 +65,27 @@ export default function DayDetailPanel({ date, laborMap, projects, onReload }) {
     setData(await api.getDay(date));
     setLoading(false);
   };
-  useEffect(() => { reload(); }, [date]);
+  useEffect(() => {
+    setOpenWorkNotes({});
+    reload();
+  }, [date]);
+
+  const toggleWorkNote = (workId) => {
+    setOpenWorkNotes(prev => ({ ...prev, [workId]: !prev[workId] }));
+  };
 
   const parsed = new Date(date + 'T00:00:00');
   const effectiveType = effectiveLabor(parsed, laborMap);
   const workHours = data.work.reduce((a, w) => a + (w.hours || 0), 0);
   const meetHours = calcMeetingHours(data.meetings);
   const totalHours = workHours + meetHours;
+  const draftHours = Number.parseFloat(newHours);
+  const previewHours = totalHours + (Number.isFinite(draftHours) && draftHours > 0 ? draftHours : 0);
 
   // Target hours: 8.75 Mon-Thu, 6 Fri, 0 weekend
   const dow = parsed.getDay(); // 0=Sun
   const targetHours = (dow >= 1 && dow <= 4) ? 8.75 : dow === 5 ? 6 : 0;
-  const pct = targetHours > 0 ? Math.min(100, (totalHours / targetHours) * 100) : 0;
+  const pct = targetHours > 0 ? Math.min(100, (previewHours / targetHours) * 100) : 0;
 
   const pretty = parsed.toLocaleDateString('es-ES', {
     weekday: 'long', day: 'numeric', month: 'long'
@@ -73,6 +112,33 @@ export default function DayDetailPanel({ date, laborMap, projects, onReload }) {
     onReload?.();
   };
 
+  const startEditWork = (w) => {
+    setEditingWorkId(w.id);
+    setEditHours(String(w.hours || 0));
+    setEditProjectId(w.project_id ? String(w.project_id) : '');
+    setEditNote(w.note || '');
+  };
+
+  const cancelEditWork = () => {
+    setEditingWorkId(null);
+    setEditHours('');
+    setEditProjectId('');
+    setEditNote('');
+  };
+
+  const saveEditWork = async (id) => {
+    const parsedHours = parseFloat(editHours);
+    if (!parsedHours || parsedHours <= 0) return;
+    await api.updateWork(id, {
+      hours: parsedHours,
+      project_id: editProjectId ? Number(editProjectId) : null,
+      note: editNote.trim() || null,
+    });
+    cancelEditWork();
+    reload();
+    onReload?.();
+  };
+
   const addTodo = async (e) => {
     e.preventDefault();
     if (!todoText.trim()) return;
@@ -84,6 +150,24 @@ export default function DayDetailPanel({ date, laborMap, projects, onReload }) {
 
   const deleteTodo = async (id) => {
     await api.deleteTodo(id);
+    reload();
+    onReload?.();
+  };
+
+  const moveTodoWithinDay = async (todoId, beforeId = null, sourceDate = date) => {
+    const sourceMatchesDay = (sourceDate || '') === date;
+    const baseTodos = sourceMatchesDay ? data.todos : [...data.todos, { id: todoId, date }];
+    const reorderedTodos = insertTodoAt(baseTodos, todoId, beforeId);
+    const orderedIds = reorderedTodos.map(todo => todo.id);
+    if (orderedIds.length === 0) return;
+    setData(prev => ({ ...prev, todos: reorderedTodos }));
+    try {
+      await api.reorderTodos(date, orderedIds);
+    } catch {
+      reload();
+      return;
+    }
+    setInsertTarget(null);
     reload();
     onReload?.();
   };
@@ -132,10 +216,10 @@ export default function DayDetailPanel({ date, laborMap, projects, onReload }) {
           <div className="day-progress-bar">
             <div
               className={`day-progress-fill ${pct >= 100 ? 'complete' : pct >= 50 ? 'half' : ''}`}
-              style={{ width: `${pct}%` }}
+                style={{ width: `${pct}%` }}
             />
           </div>
-          <span className="day-progress-label">{totalHours.toFixed(2)} / {targetHours}h</span>
+          <span className="day-progress-label">{previewHours.toFixed(2)} / {targetHours}h</span>
         </div>
       )}
 
@@ -148,7 +232,7 @@ export default function DayDetailPanel({ date, laborMap, projects, onReload }) {
               {data.work.map(w => (
                 <li
                   key={w.id}
-                  className="day-entry"
+                  className={`day-entry ${openWorkNotes[w.id] ? 'note-open' : ''}`}
                   onDragOver={e => {
                     e.preventDefault();
                     e.currentTarget.classList.add('drag-over');
@@ -157,6 +241,7 @@ export default function DayDetailPanel({ date, laborMap, projects, onReload }) {
                     e.currentTarget.classList.remove('drag-over');
                   }}
                   onDrop={async e => {
+                    if (editingWorkId === w.id) return;
                     e.preventDefault();
                     e.currentTarget.classList.remove('drag-over');
                     const droppedText = e.dataTransfer.getData('text/plain');
@@ -175,14 +260,65 @@ export default function DayDetailPanel({ date, laborMap, projects, onReload }) {
                 >
                   <span className="day-entry-swatch" style={{ background: w.project_color || '#4f8cff' }} />
                   <div className="day-entry-info">
-                    <div className="day-entry-time">{(w.hours || 0).toFixed(2)}h</div>
-                    <div className="day-entry-project">{w.project_name || 'Sin proyecto'}</div>
+                    {editingWorkId === w.id ? (
+                      <div className="day-entry-edit-grid">
+                        <input
+                          type="number"
+                          step="0.25"
+                          min="0"
+                          max="24"
+                          className="inline-input day-entry-edit-hours"
+                          value={editHours}
+                          onChange={e => setEditHours(e.target.value)}
+                        />
+                        <FlowbiteDropdown
+                          className="inline-select day-entry-edit-project"
+                          value={editProjectId}
+                          onChange={setEditProjectId}
+                          options={[
+                            { value: '', label: 'Sin proyecto' },
+                            ...projects.map(p => ({ value: String(p.id), label: p.name })),
+                          ]}
+                          ariaLabel="Proyecto"
+                        />
+                        <textarea
+                          className="inline-textarea day-entry-edit-note"
+                          rows={2}
+                          placeholder="Notas (opcional)"
+                          value={editNote}
+                          onChange={e => setEditNote(e.target.value)}
+                        />
+                      </div>
+                    ) : (
+                      <>
+                        <div className="day-entry-time">{(w.hours || 0).toFixed(2)}h</div>
+                        <div className="day-entry-project">{w.project_name || 'Sin proyecto'}</div>
+                      </>
+                    )}
                   </div>
-                  <div className="day-entry-actions">
-                    {w.note && <button className="note-tri" onClick={e => e.currentTarget.closest('.day-entry').classList.toggle('note-open')} title="Ver nota">▶</button>}
-                    <button className="btn-delete" onClick={() => deleteWork(w.id)} title="Eliminar">✕</button>
+                  <div className={`day-entry-actions ${editingWorkId === w.id ? 'editing' : ''}`}>
+                    {editingWorkId === w.id ? (
+                      <>
+                        <button className="btn btn-primary btn-sm" onClick={() => saveEditWork(w.id)} title="Guardar">Guardar</button>
+                        <button className="btn btn-ghost btn-sm" onClick={cancelEditWork} title="Cancelar">Cancelar</button>
+                      </>
+                    ) : (
+                      <>
+                        <button className="btn-edit" onClick={() => startEditWork(w)} title="Editar">✎</button>
+                        {w.note && (
+                          <button
+                            type="button"
+                            className={`note-tri ${openWorkNotes[w.id] ? 'open' : ''}`}
+                            onClick={() => toggleWorkNote(w.id)}
+                            aria-expanded={!!openWorkNotes[w.id]}
+                            title="Ver nota"
+                          >▶</button>
+                        )}
+                        <button className="btn-delete" onClick={() => deleteWork(w.id)} title="Eliminar">✕</button>
+                      </>
+                    )}
                   </div>
-                  {w.note && (
+                  {editingWorkId !== w.id && w.note && (
                     <div className="day-entry-note">
                       {w.note.split('\n').map((line, i) => {
                         const isTask = line.startsWith('[TAREA] ');
@@ -233,10 +369,16 @@ export default function DayDetailPanel({ date, laborMap, projects, onReload }) {
                 onChange={e => setNewHours(e.target.value)}
                 className="inline-input hours-input"
               />
-              <select value={newProjectId} onChange={e => setNewProjectId(e.target.value)} className="inline-select">
-                <option value="">Sin proyecto</option>
-                {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </select>
+              <FlowbiteDropdown
+                className="inline-select"
+                value={newProjectId}
+                onChange={setNewProjectId}
+                options={[
+                  { value: '', label: 'Sin proyecto' },
+                  ...projects.map(p => ({ value: String(p.id), label: p.name })),
+                ]}
+                ariaLabel="Proyecto"
+              />
               <button type="submit" className="btn-add" disabled={!newHours}>+</button>
             </div>
             <textarea
@@ -272,25 +414,102 @@ export default function DayDetailPanel({ date, laborMap, projects, onReload }) {
           <h4 className="day-section-title">✅ Tareas</h4>
           {data.todos.length > 0 && (
             <ul className="day-entries">
-              {data.todos.map(t => (
-                <li
-                  key={t.id}
-                  className="day-entry todo-entry"
-                  draggable
-                  onDragStart={e => e.dataTransfer.setData('text/plain', t.text)}
-                  title="Arrastra esta tarea a las notas de trabajo"
-                >
-                  <input type="checkbox" checked={!!t.done}
-                    onChange={async e => {
-                      await api.updateTodo(t.id, { done: e.target.checked ? 1 : 0 });
-                      reload();
-                      onReload?.();
+              <li
+                className={`todo-drop-slot day-drop-slot ${insertTarget === 'start' ? 'active' : ''}`}
+                onDragOver={e => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  e.dataTransfer.dropEffect = 'move';
+                  setInsertTarget('start');
+                }}
+                onDrop={async e => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  const todoId = e.dataTransfer.getData('application/x-todo-id');
+                  const sourceDate = e.dataTransfer.getData('application/x-todo-date');
+                  if (!todoId) return;
+                  if ((sourceDate || '') !== date) {
+                    await api.updateTodo(Number(todoId), { date });
+                  }
+                  await moveTodoWithinDay(Number(todoId), data.todos[0]?.id ?? null, sourceDate);
+                }}
+              />
+              {data.todos.map((t, idx) => (
+                <li key={t.id}>
+                  <div
+                    className={`day-entry todo-entry ${insertTarget === String(t.id) ? 'drop-before' : ''} ${insertTarget === String(data.todos[idx + 1]?.id ?? 'end') ? 'drop-after' : ''}`}
+                    draggable
+                    onDragStart={e => {
+                      e.dataTransfer.setData('application/x-todo-id', String(t.id));
+                      e.dataTransfer.setData('application/x-todo-date', t.date || '');
+                      e.dataTransfer.setData('text/plain', t.text);
+                      e.dataTransfer.effectAllowed = 'move';
                     }}
-                    className="day-todo-check" />
-                  <span className={`todo-text ${t.done ? 'done' : ''}`}>{t.text}</span>
-                  <button className="btn-delete" onClick={() => deleteTodo(t.id)} title="Eliminar">✕</button>
+                    onDragOver={e => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      e.dataTransfer.dropEffect = 'move';
+                      const beforeId = getBeforeIdByPointer(e, t.id, data.todos[idx + 1]?.id);
+                      setInsertTarget(String(beforeId ?? 'end'));
+                    }}
+                    onDrop={async e => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      const todoId = e.dataTransfer.getData('application/x-todo-id');
+                      const sourceDate = e.dataTransfer.getData('application/x-todo-date');
+                      if (!todoId) return;
+                      const beforeId = getBeforeIdByPointer(e, t.id, data.todos[idx + 1]?.id);
+                      if ((sourceDate || '') !== date) {
+                        await api.updateTodo(Number(todoId), { date });
+                      }
+                      await moveTodoWithinDay(Number(todoId), beforeId, sourceDate);
+                    }}
+                    title="Arrastra esta tarea para reordenarla o vincularla a notas de trabajo"
+                  >
+                    <input type="checkbox" checked={!!t.done}
+                      onChange={async e => {
+                        await api.updateTodo(t.id, { done: e.target.checked ? 1 : 0 });
+                        reload();
+                        onReload?.();
+                      }}
+                      className="day-todo-check" />
+                    <span className={`todo-text ${t.done ? 'done' : ''}`}>
+                     {t.text}
+                    </span>
+                    <button
+                     className="btn-carry-over"
+                     title="Pasar al día siguiente"
+                     onClick={async () => {
+                       const nextDay = iso(addDays(new Date(date + 'T00:00:00'), 1));
+                       await api.carryOverTodo(t.id, nextDay);
+                       reload();
+                       onReload?.();
+                     }}
+                    >⏭</button>
+                    <button className="btn-delete" onClick={() => deleteTodo(t.id)} title="Eliminar">✕</button>
+                  </div>
                 </li>
               ))}
+              <li
+                className={`todo-drop-slot day-drop-slot ${insertTarget === 'end' ? 'active' : ''}`}
+                onDragOver={e => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  e.dataTransfer.dropEffect = 'move';
+                  setInsertTarget('end');
+                }}
+                onDrop={async e => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  const todoId = e.dataTransfer.getData('application/x-todo-id');
+                  const sourceDate = e.dataTransfer.getData('application/x-todo-date');
+                  if (!todoId) return;
+                  if ((sourceDate || '') !== date) {
+                    await api.updateTodo(Number(todoId), { date });
+                  }
+                  await moveTodoWithinDay(Number(todoId), null, sourceDate);
+                }}
+              />
             </ul>
           )}
           <form className="inline-form" onSubmit={addTodo}>
@@ -324,10 +543,16 @@ export default function DayDetailPanel({ date, laborMap, projects, onReload }) {
             </ul>
           )}
           <form className="inline-form" onSubmit={addEvent}>
-            <select value={eventKind} onChange={e => setEventKind(e.target.value)} className="inline-select">
-              <option value="event">Evento</option>
-              <option value="delivery">Entrega</option>
-            </select>
+            <FlowbiteDropdown
+              className="inline-select"
+              value={eventKind}
+              onChange={setEventKind}
+              options={[
+                { value: 'event', label: 'Evento' },
+                { value: 'delivery', label: 'Entrega' },
+              ]}
+              ariaLabel="Tipo de evento"
+            />
             <input
               type="text" placeholder="Título…"
               value={eventTitle}
@@ -367,25 +592,38 @@ export default function DayDetailPanel({ date, laborMap, projects, onReload }) {
                         {m.allDay ? 'Todo el día' : `${m.startTime}${m.endTime ? ` – ${m.endTime}` : ''}`}
                       </div>
                       <div className="meeting-project-row">
-                        <select
+                        <FlowbiteDropdown
                           className={`meeting-project-select${m.project_id ? ' has-project' : ''}`}
-                          style={m.project_id ? { background: m.project_color || '#ccc', color: 'white', borderColor: 'transparent' } : {}}
-                          value={m.project_id || ''}
-                          onChange={async (e) => {
-                            await api.setMeetingProject(m.uid, date, e.target.value ? Number(e.target.value) : null);
+                          buttonStyle={m.project_id ? { background: m.project_color || '#ccc', color: 'white', borderColor: 'transparent' } : {}}
+                          value={m.project_id ? String(m.project_id) : ''}
+                          onChange={async (nextProjectId) => {
+                            await api.setMeetingProject(m.uid, date, nextProjectId ? Number(nextProjectId) : null);
                             reload();
                             onReload?.();
                           }}
-                        >
-                          <option value="">{m.project_id ? '✕ Quitar proyecto' : '+ Asignar proyecto…'}</option>
-                          {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                        </select>
+                          options={[
+                            { value: '', label: m.project_id ? '✕ Quitar proyecto' : '+ Asignar proyecto…' },
+                            ...projects.map(p => ({ value: String(p.id), label: p.name })),
+                          ]}
+                          ariaLabel="Asignar proyecto a reunión"
+                        />
                         <button
                           className="btn btn-ghost btn-sm meeting-notes-btn"
                           onClick={() => setNotesEditor({ meetingType, meetingRef, meetingDate: date })}
                         >
                           📝 Notas
                         </button>
+                        {!m.isCustom && (
+                          <button
+                            className={`btn-delete meeting-att-btn ${m.attending === false || m.attending === 0 ? 'absent' : 'attending'}`}
+                            onClick={async () => {
+                              await api.setMeetingAttendance(m.uid, date, m.attending === false || m.attending === 0);
+                              reload();
+                              onReload?.();
+                            }}
+                            title={m.attending === false || m.attending === 0 ? 'Marcar como asisto (contará horas)' : 'Marcar como no asisto (no contará horas)'}
+                          >{m.attending === false || m.attending === 0 ? '✕' : '✓'}</button>
+                        )}
                         {m.isCustom && (
                           <button
                             className="btn-delete"

@@ -39,14 +39,24 @@ export default function Calendar({ cursor, today, onSelect, laborMap, daySummari
           const hasMeetings = summary?.meetings?.length > 0;
           const isWorkday = eff.type === 'laborable';
           const isFuture = new Date(dIso + 'T00:00:00') > today;
+          const ariaLabel = [
+            date.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' }),
+            eff.label || null,
+            totalHours > 0 ? `${totalHours.toFixed(1)} horas` : null,
+            hasTodos ? 'con tareas' : null,
+            hasEvents ? 'con eventos' : null,
+            hasMeetings ? 'con reuniones' : null,
+          ].filter(Boolean).join(', ');
 
           return (
-            <div
+            <button
+              type="button"
               key={`${wi}-${di}`}
               className={`cal-cell ${inMonth ? '' : 'out'} ${isToday ? 'today' : ''} ${isSelected ? 'selected' : ''} ${dropTarget === dIso ? 'drop-hover' : ''} ${isSpecial ? 'special' : ''} cal-cell-${eff.type}`}
               onClick={() => onSelect(dIso)}
               style={laborStyle}
               title={eff.label || ''}
+              aria-label={ariaLabel}
               onDragOver={e => {
                 if (onDropTodo) {
                   e.preventDefault();
@@ -80,7 +90,7 @@ export default function Calendar({ cursor, today, onSelect, laborMap, daySummari
                   <div className="cal-total">{totalHours.toFixed(1)}h</div>
                 )}
               </div>
-            </div>
+            </button>
           );
         }))}
       </div>

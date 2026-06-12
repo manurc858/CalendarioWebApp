@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { api } from '../api.js';
+import FlowbiteDateInput from './FlowbiteDateInput.jsx';
 
 /** Convert markdown → HTML for initial load into contentEditable */
 function mdToHtml(md) {
@@ -90,6 +91,8 @@ function htmlToMd(html) {
 }
 
 export default function MeetingNotesEditor({ meetingType, meetingRef, meetingDate, onClose }) {
+  const dialogRef = useRef(null);
+  const restoreFocusRef = useRef(null);
   const [links, setLinks] = useState('');
   const [saving, setSaving] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -107,6 +110,36 @@ export default function MeetingNotesEditor({ meetingType, meetingRef, meetingDat
       }
     })();
   }, [meetingType, meetingRef, meetingDate]);
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+
+    restoreFocusRef.current = document.activeElement;
+    if (!dialog.open) dialog.showModal();
+
+    const onCancel = (e) => {
+      e.preventDefault();
+      onClose();
+    };
+
+    const onBackdropClick = (e) => {
+      if (e.target === dialog) onClose();
+    };
+
+    dialog.addEventListener('cancel', onCancel);
+    dialog.addEventListener('click', onBackdropClick);
+
+    return () => {
+      dialog.removeEventListener('cancel', onCancel);
+      dialog.removeEventListener('click', onBackdropClick);
+      if (dialog.open) dialog.close();
+      const toFocus = restoreFocusRef.current;
+      if (toFocus && typeof toFocus.focus === 'function' && document.contains(toFocus)) {
+        requestAnimationFrame(() => toFocus.focus());
+      }
+    };
+  }, [onClose]);
 
   const getMarkdown = () => {
     if (!editorRef.current) return '';
@@ -151,11 +184,11 @@ export default function MeetingNotesEditor({ meetingType, meetingRef, meetingDat
   if (!loaded) return <div className="mn-editor-loading">Cargando notas…</div>;
 
   return (
-    <div className="mn-editor-overlay">
+    <dialog ref={dialogRef} className="mn-editor-dialog" aria-labelledby="meeting-notes-dialog-title">
       <div className="mn-editor">
         <div className="mn-editor-head">
-          <h3>📝 Notas de reunión</h3>
-          <button className="btn btn-icon" onClick={onClose}>✕</button>
+          <h3 id="meeting-notes-dialog-title">📝 Notas de reunión</h3>
+          <button type="button" className="btn btn-icon" onClick={onClose} aria-label="Cerrar editor de notas">✕</button>
         </div>
 
         {/* Toolbar */}
@@ -194,7 +227,7 @@ export default function MeetingNotesEditor({ meetingType, meetingRef, meetingDat
             if (!editorRef.current) return;
             const text = editorRef.current.innerText;
             navigator.clipboard.writeText(text);
-          }} title="Copiar notas">
+          }} title="Copiar notas" aria-label="Copiar notas">
             📋
           </button>
         </div>
@@ -240,12 +273,12 @@ export default function MeetingNotesEditor({ meetingType, meetingRef, meetingDat
               value={taskText}
               onChange={e => setTaskText(e.target.value)}
             />
-            <input
-              type="date"
-              className="inline-input mn-task-date"
+            <FlowbiteDateInput
               value={taskDate}
-              onChange={e => setTaskDate(e.target.value)}
+              onValueChange={setTaskDate}
+              className="inline-input mn-task-date"
               title="Fecha (vacío = sin asignar)"
+              placeholder="Sin fecha"
             />
             <button type="submit" className="btn-add" disabled={!taskText.trim()}>+</button>
           </form>
@@ -260,6 +293,6 @@ export default function MeetingNotesEditor({ meetingType, meetingRef, meetingDat
           </button>
         </div>
       </div>
-    </div>
+    </dialog>
   );
 }

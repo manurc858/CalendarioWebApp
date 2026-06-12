@@ -2,10 +2,50 @@ import express from 'express';
 import cors from 'cors';
 import db from './db.js';
 import { getMeetingsInRange, getMeetingsForDate, refreshMeetings } from './outlook.js';
+import { initAI, chatWithAI, saveDailySnapshot } from './ai.js';
+
+process.on('uncaughtException', (err) => {
+  console.error('[FATAL] Uncaught Exception:', err.message);
+  console.error('[FATAL] Stack:', err.stack);
+  if (err.cause) console.error('[FATAL] Cause:', err.cause);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[FATAL] Unhandled Rejection:', reason);
+});
 
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+function getExcludedMeetingSet({ date, from, to }) {
+  let rows = [];
+  if (date) {
+    rows = db.prepare('SELECT uid, date FROM meeting_attendance WHERE attending=0 AND date=?').all(date);
+  } else if (from && to) {
+    rows = db.prepare('SELECT uid, date FROM meeting_attendance WHERE attending=0 AND date BETWEEN ? AND ?').all(from, to);
+  }
+  return new Set(rows.map(r => `${r.uid}|${r.date}`));
+}
+
+function normalizedMeetingTitle(title) {
+  return String(title || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function dedupeMeetings(meetings = []) {
+  const seen = new Set();
+  return meetings.filter(m => {
+    const key = [
+      m.date || '',
+      normalizedMeetingTitle(m.title),
+      m.allDay ? '1' : '0',
+      m.startTime || '',
+      m.endTime || '',
+    ].join('|');
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
 
 // -------- Projects --------
 app.get('/api/projects', (req, res) => {
@@ -73,12 +113,14 @@ app.get('/api/projects/stats', async (req, res) => {
 
     // Add meeting minutes per project (Outlook + custom)
     try {
-      const meetings = await getMeetingsInRange(from, to);
+      const meetings = dedupeMeetings(await getMeetingsInRange(from, to));
+      const excluded = getExcludedMeetingSet({ from, to });
       const mpRows = db.prepare('SELECT mp.uid, mp.date, mp.project_id FROM meeting_projects mp WHERE mp.date BETWEEN ? AND ?').all(from, to);
       const mpMap = {};
       mpRows.forEach(r => { mpMap[`${r.uid}|${r.date}`] = r.project_id; });
       const meetingMinsByProject = {};
       meetings.forEach(m => {
+        if (excluded.has(`${m.uid}|${m.date}`)) return;
         const pid = mpMap[`${m.uid}|${m.date}`];
         if (!pid || m.allDay || !m.startTime || !m.endTime) return;
         const [sh, sm] = m.startTime.split(':').map(Number);
@@ -87,12 +129,22 @@ app.get('/api/projects/stats', async (req, res) => {
         if (mins > 0) meetingMinsByProject[pid] = (meetingMinsByProject[pid] || 0) + mins;
       });
       // Custom meetings
-      const customRows = db.prepare('SELECT * FROM custom_meetings WHERE date BETWEEN ? AND ?').all(from, to);
-      customRows.forEach(cm => {
-        const pid = mpMap[`custom-${cm.id}|${cm.date}`];
-        if (!pid || cm.all_day || !cm.start_time || !cm.end_time) return;
-        const [sh, sm] = cm.start_time.split(':').map(Number);
-        const [eh, em] = cm.end_time.split(':').map(Number);
+      const customMeetings = dedupeMeetings(
+        db.prepare('SELECT * FROM custom_meetings WHERE date BETWEEN ? AND ?').all(from, to).map(cm => ({
+          uid: `custom-${cm.id}`,
+          date: cm.date,
+          title: cm.title,
+          allDay: !!cm.all_day,
+          startTime: cm.start_time,
+          endTime: cm.end_time,
+        }))
+      );
+      customMeetings.forEach(cm => {
+        if (excluded.has(`${cm.uid}|${cm.date}`)) return;
+        const pid = mpMap[`${cm.uid}|${cm.date}`];
+        if (!pid || cm.allDay || !cm.startTime || !cm.endTime) return;
+        const [sh, sm] = cm.startTime.split(':').map(Number);
+        const [eh, em] = cm.endTime.split(':').map(Number);
         const mins = (eh * 60 + em) - (sh * 60 + sm);
         if (mins > 0) meetingMinsByProject[pid] = (meetingMinsByProject[pid] || 0) + mins;
       });
@@ -159,39 +211,83 @@ app.delete('/api/work/:id', (req, res) => {
 app.get('/api/todos', (req, res) => {
   const { date, from, to } = req.query;
   let rows;
-  if (date) rows = db.prepare('SELECT * FROM todos WHERE date=? ORDER BY id').all(date);
-  else if (from && to) rows = db.prepare('SELECT * FROM todos WHERE date BETWEEN ? AND ? ORDER BY date, id').all(from, to);
-  else rows = db.prepare('SELECT * FROM todos ORDER BY date, id').all();
+  if (date) rows = db.prepare('SELECT * FROM todos WHERE date=? ORDER BY sort_order, id').all(date);
+  else if (from && to) rows = db.prepare('SELECT * FROM todos WHERE date BETWEEN ? AND ? ORDER BY date, sort_order, id').all(from, to);
+  else rows = db.prepare("SELECT * FROM todos ORDER BY COALESCE(date, ''), sort_order, id").all();
   res.json(rows);
 });
 app.post('/api/todos', (req, res) => {
   const { date, text } = req.body;
-  const info = db.prepare('INSERT INTO todos(date, text, done) VALUES(?,?,0)').run(date ?? null, text);
+  const nextOrder = db.prepare('SELECT COALESCE(MAX(sort_order), 0) + 1 AS value FROM todos WHERE date IS ?').get(date ?? null).value;
+  const info = db.prepare('INSERT INTO todos(date, text, done, sort_order) VALUES(?,?,0,?)').run(date ?? null, text, nextOrder);
   res.json({ id: info.lastInsertRowid });
+});
+app.put('/api/todos/reorder', (req, res) => {
+  const { date = null, orderedIds } = req.body;
+  if (!Array.isArray(orderedIds) || orderedIds.length === 0) {
+    return res.status(400).json({ error: 'orderedIds required' });
+  }
+
+  const existing = db.prepare('SELECT id FROM todos WHERE date IS ?').all(date).map(row => row.id);
+  const existingSet = new Set(existing);
+  const normalized = orderedIds.map(Number);
+
+  if (normalized.length !== existing.length || new Set(normalized).size !== existing.length) {
+    return res.status(400).json({ error: 'orderedIds must include each todo exactly once' });
+  }
+  if (normalized.some(id => !existingSet.has(id))) {
+    return res.status(400).json({ error: 'orderedIds must match todos in target date bucket' });
+  }
+
+  const update = db.prepare('UPDATE todos SET sort_order=? WHERE id=?');
+  const tx = db.transaction(() => {
+    normalized.forEach((id, index) => update.run(index + 1, id));
+  });
+  tx();
+  res.json({ ok: true });
 });
 app.put('/api/todos/:id', (req, res) => {
   const { text, done } = req.body;
   const current = db.prepare('SELECT * FROM todos WHERE id=?').get(req.params.id);
   if (!current) return res.status(404).json({ error: 'not found' });
   const newDate = 'date' in req.body ? req.body.date : current.date;
-  db.prepare('UPDATE todos SET text=?, done=?, date=? WHERE id=?')
-    .run(text ?? current.text, done ?? current.done, newDate, req.params.id);
+  const movedDate = newDate !== current.date;
+  const nextOrder = movedDate
+    ? db.prepare('SELECT COALESCE(MAX(sort_order), 0) + 1 AS value FROM todos WHERE date IS ?').get(newDate ?? null).value
+    : current.sort_order;
+  db.prepare('UPDATE todos SET text=?, done=?, date=?, sort_order=? WHERE id=?')
+    .run(text ?? current.text, done ?? current.done, newDate, nextOrder, req.params.id);
   res.json({ ok: true });
 });
 app.delete('/api/todos/:id', (req, res) => {
   db.prepare('DELETE FROM todos WHERE id=?').run(req.params.id);
   res.json({ ok: true });
 });
+// Carry-over: duplica una tarea al día siguiente (o a la fecha indicada)
+app.post('/api/todos/:id/carry-over', (req, res) => {
+  const current = db.prepare('SELECT * FROM todos WHERE id=?').get(req.params.id);
+  if (!current) return res.status(404).json({ error: 'not found' });
+  let toDate = req.body?.to_date ?? null;
+  if (!toDate && current.date) {
+    const d = new Date(current.date + 'T00:00:00');
+    d.setDate(d.getDate() + 1);
+    toDate = d.toISOString().slice(0, 10);
+  }
+  const nextOrder = db.prepare('SELECT COALESCE(MAX(sort_order), 0) + 1 AS value FROM todos WHERE date IS ?').get(toDate ?? null).value;
+  const info = db.prepare('INSERT INTO todos(date, text, done, sort_order) VALUES(?,?,0,?)')
+    .run(toDate ?? null, current.text, nextOrder);
+  res.json({ id: info.lastInsertRowid, date: toDate, text: current.text });
+});
 // Unassigned todos: date IS NULL, not done
 app.get('/api/todos/unassigned', (req, res) => {
-  const rows = db.prepare('SELECT * FROM todos WHERE date IS NULL AND done=0 ORDER BY id').all();
+  const rows = db.prepare('SELECT * FROM todos WHERE date IS NULL AND done=0 ORDER BY sort_order, id').all();
   res.json(rows);
 });
 // Overdue todos: not done, date < today
 app.get('/api/todos/overdue', (req, res) => {
   const { before } = req.query;
   if (!before) return res.status(400).json({ error: 'before required' });
-  const rows = db.prepare('SELECT * FROM todos WHERE done=0 AND date IS NOT NULL AND date < ? ORDER BY date, id').all(before);
+  const rows = db.prepare('SELECT * FROM todos WHERE done=0 AND date IS NOT NULL AND date < ? ORDER BY date, sort_order, id').all(before);
   res.json(rows);
 });
 
@@ -259,7 +355,9 @@ app.put('/api/settings/:key', (req, res) => {
 app.get('/api/day/:date', async (req, res) => {
   const date = req.params.date;
   let meetings = [];
+  const excluded = getExcludedMeetingSet({ date });
   try { meetings = await getMeetingsForDate(date); } catch (_) { meetings = []; }
+  meetings = dedupeMeetings(meetings).map(m => ({ ...m, attending: !excluded.has(`${m.uid}|${m.date}`) }));
 
   // Enrich meetings with project info
   const mpRows = db.prepare('SELECT mp.uid, mp.project_id, p.name AS project_name, p.color AS project_color FROM meeting_projects mp JOIN projects p ON p.id = mp.project_id WHERE mp.date=?').all(date);
@@ -281,6 +379,7 @@ app.get('/api/day/:date', async (req, res) => {
       startTime: cm.start_time,
       endTime: cm.end_time,
       allDay: !!cm.all_day,
+      attending: !excluded.has(`custom-${cm.id}|${cm.date}`),
       isCustom: true,
       customId: cm.id,
       notes: cm.notes,
@@ -288,15 +387,16 @@ app.get('/api/day/:date', async (req, res) => {
       ...(mp ? { project_id: mp.project_id, project_name: mp.project_name, project_color: mp.project_color } : {}),
     };
   });
+  const mergedMeetings = dedupeMeetings([...meetings, ...customMeetings]);
 
   res.json({
     work: db.prepare(`SELECT w.*, p.name AS project_name, p.color AS project_color
       FROM work_entries w LEFT JOIN projects p ON p.id = w.project_id
       WHERE w.date=? ORDER BY w.start_time`).all(date),
-    todos: db.prepare('SELECT * FROM todos WHERE date=? ORDER BY id').all(date),
+    todos: db.prepare('SELECT * FROM todos WHERE date=? ORDER BY sort_order, id').all(date),
     events: db.prepare('SELECT * FROM events WHERE date=? ORDER BY id').all(date),
     labor: db.prepare('SELECT * FROM labor_days WHERE date=?').get(date) || null,
-    meetings: [...meetings, ...customMeetings],
+    meetings: mergedMeetings,
   });
 });
 
@@ -308,6 +408,8 @@ app.get('/api/meetings', async (req, res) => {
     if (date) meetings = await getMeetingsForDate(date);
     else if (from && to) meetings = await getMeetingsInRange(from, to);
     else return res.status(400).json({ error: 'date or from/to required' });
+    const excluded = getExcludedMeetingSet({ date, from, to });
+    meetings = dedupeMeetings(meetings).map(m => ({ ...m, attending: !excluded.has(`${m.uid}|${m.date}`) }));
 
     // Enrich meetings with project info
     const mpRows = db.prepare('SELECT mp.uid, mp.date, mp.project_id, p.name AS project_name, p.color AS project_color FROM meeting_projects mp JOIN projects p ON p.id = mp.project_id').all();
@@ -331,6 +433,7 @@ app.get('/api/meetings', async (req, res) => {
         startTime: cm.start_time,
         endTime: cm.end_time,
         allDay: !!cm.all_day,
+        attending: !excluded.has(`custom-${cm.id}|${cm.date}`),
         isCustom: true,
         customId: cm.id,
         notes: cm.notes,
@@ -339,7 +442,7 @@ app.get('/api/meetings', async (req, res) => {
       };
     });
 
-    res.json([...meetings, ...customMeetings]);
+    res.json(dedupeMeetings([...meetings, ...customMeetings]));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -362,6 +465,20 @@ app.put('/api/meeting-project', (req, res) => {
   } else {
     db.prepare('INSERT INTO meeting_projects(uid, date, project_id) VALUES(?,?,?) ON CONFLICT(uid, date) DO UPDATE SET project_id=excluded.project_id')
       .run(uid, date, project_id);
+  }
+  res.json({ ok: true });
+});
+
+// -------- Meeting attendance --------
+app.put('/api/meeting-attendance', (req, res) => {
+  const { uid, date, attending } = req.body;
+  if (!uid || !date) return res.status(400).json({ error: 'uid and date required' });
+
+  if (attending === false || attending === 0) {
+    db.prepare('INSERT INTO meeting_attendance(uid, date, attending) VALUES(?,?,0) ON CONFLICT(uid, date) DO UPDATE SET attending=0')
+      .run(uid, date);
+  } else {
+    db.prepare('DELETE FROM meeting_attendance WHERE uid=? AND date=?').run(uid, date);
   }
   res.json({ ok: true });
 });
@@ -404,6 +521,7 @@ app.delete('/api/custom-meetings/:id', (req, res) => {
   db.prepare('DELETE FROM custom_meetings WHERE id=?').run(req.params.id);
   // Also delete associated notes
   db.prepare("DELETE FROM meeting_notes WHERE meeting_type='custom' AND meeting_ref=?").run(String(req.params.id));
+  db.prepare('DELETE FROM meeting_attendance WHERE uid=?').run(`custom-${req.params.id}`);
   res.json({ ok: true });
 });
 
@@ -422,6 +540,108 @@ app.put('/api/meeting-notes', (req, res) => {
     .run(meeting_type, meeting_ref, meeting_date, notes || '', links || '');
   res.json({ ok: true });
 });
+
+// -------- AI Chat --------
+app.get('/api/ai/conversations', (req, res) => {
+  const rows = db.prepare('SELECT * FROM chat_conversations ORDER BY updated_at DESC').all();
+  res.json(rows);
+});
+
+app.post('/api/ai/conversations', (req, res) => {
+  const title = req.body.title || 'Nueva conversación';
+  const info = db.prepare('INSERT INTO chat_conversations(title) VALUES(?)').run(title);
+  res.json({ id: info.lastInsertRowid, title, created_at: new Date().toISOString(), updated_at: new Date().toISOString() });
+});
+
+app.delete('/api/ai/conversations/:id', (req, res) => {
+  db.prepare('DELETE FROM chat_messages WHERE conversation_id=?').run(req.params.id);
+  db.prepare('DELETE FROM chat_conversations WHERE id=?').run(req.params.id);
+  res.json({ ok: true });
+});
+
+app.put('/api/ai/conversations/:id', (req, res) => {
+  const { title } = req.body;
+  db.prepare(`UPDATE chat_conversations SET title=?, updated_at=datetime('now') WHERE id=?`).run(title, req.params.id);
+  res.json({ ok: true });
+});
+
+app.get('/api/ai/conversations/:id/messages', (req, res) => {
+  const rows = db.prepare('SELECT * FROM chat_messages WHERE conversation_id=? ORDER BY id').all(req.params.id);
+  res.json(rows);
+});
+
+app.post('/api/ai/chat', async (req, res) => {
+  console.log('[AI] Petición recibida:', req.body?.message?.slice(0, 50));
+  try {
+    const { message } = req.body;
+    if (!message?.trim()) return res.status(400).json({ error: 'message required' });
+
+    const reply = await chatWithAI(null, message);
+    res.json({ reply });
+  } catch (err) {
+    console.error('[AI] Error en /api/ai/chat:', err.message);
+    if (err.cause) console.error('[AI] Causa:', err.cause);
+    res.status(502).json({ error: `Error: ${err.message}` });
+  }
+});
+
+app.post('/api/ai/snapshot', async (req, res) => {
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    await saveDailySnapshot(today);
+    res.json({ ok: true, date: today });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Iniciar agente AI
+initAI();
+
+// -------- Copia diaria de reuniones Outlook a las 20:00 --------
+async function cacheOutlookMeetings() {
+  const today = new Date().toISOString().slice(0, 10);
+  // Copiar reuniones de hoy + próximos 30 días
+  const until = new Date();
+  until.setDate(until.getDate() + 30);
+  const untilIso = until.toISOString().slice(0, 10);
+  try {
+    const meetings = await getMeetingsInRange(today, untilIso);
+    const upsert = db.prepare(`
+      INSERT INTO outlook_meetings_cache(uid, date, title, start_time, end_time, all_day, teams_url)
+      VALUES(?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(uid, date) DO UPDATE SET
+        title=excluded.title, start_time=excluded.start_time,
+        end_time=excluded.end_time, all_day=excluded.all_day,
+        teams_url=excluded.teams_url, cached_at=datetime('now')
+    `);
+    const tx = db.transaction(() => {
+      for (const m of meetings) {
+        upsert.run(m.uid, m.date, m.title, m.startTime, m.endTime, m.allDay ? 1 : 0, m.teamsUrl || null);
+      }
+    });
+    tx();
+    console.log(`[cache] ${meetings.length} reuniones de Outlook guardadas (${today} → ${untilIso})`);
+  } catch (err) {
+    console.error('[cache] Error copiando reuniones Outlook:', err.message);
+  }
+}
+
+function scheduleDailyCache() {
+  const now = new Date();
+  const target = new Date(now);
+  target.setHours(20, 0, 0, 0);
+  if (now >= target) target.setDate(target.getDate() + 1);
+  const ms = target - now;
+  console.log(`[cache] Próxima copia de reuniones programada para ${target.toLocaleString()}`);
+  setTimeout(() => {
+    cacheOutlookMeetings();
+    // Repetir cada 24h
+    setInterval(cacheOutlookMeetings, 24 * 60 * 60 * 1000);
+  }, ms);
+}
+
+scheduleDailyCache();
 
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => console.log(`API listening on http://localhost:${PORT}`));

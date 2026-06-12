@@ -35,7 +35,9 @@ export const api = {
   },
   createTodo: (data) => req('/todos', { method: 'POST', body: data }),
   updateTodo: (id, data) => req(`/todos/${id}`, { method: 'PUT', body: data }),
+  reorderTodos: (date, orderedIds) => req('/todos/reorder', { method: 'PUT', body: { date: date ?? null, orderedIds } }),
   deleteTodo: (id) => req(`/todos/${id}`, { method: 'DELETE' }),
+  carryOverTodo: (id, toDate) => req(`/todos/${id}/carry-over`, { method: 'POST', body: toDate ? { to_date: toDate } : {} }),
   overdueTodos: (before) => req(`/todos/overdue?before=${before}`),
   unassignedTodos: () => req('/todos/unassigned'),
 
@@ -68,6 +70,8 @@ export const api = {
   refreshMeetings: () => req('/meetings/refresh', { method: 'POST' }),
   setMeetingProject: (uid, date, project_id) =>
     req('/meeting-project', { method: 'PUT', body: { uid, date, project_id: project_id || null } }),
+  setMeetingAttendance: (uid, date, attending) =>
+    req('/meeting-attendance', { method: 'PUT', body: { uid, date, attending } }),
 
   // custom meetings (user-created)
   listCustomMeetings: (params = {}) => {
@@ -82,4 +86,7 @@ export const api = {
   getMeetingNotes: (meeting_type, meeting_ref, meeting_date) =>
     req(`/meeting-notes?meeting_type=${meeting_type}&meeting_ref=${meeting_ref}&meeting_date=${meeting_date}`),
   saveMeetingNotes: (data) => req('/meeting-notes', { method: 'PUT', body: data }),
+
+  // AI Chat
+  aiChat: (message) => req('/ai/chat', { method: 'POST', body: { message } }),
 };
