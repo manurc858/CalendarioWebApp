@@ -1,0 +1,140 @@
+/* ---------- Main ---------- */
+.main {
+  display: flex; flex-direction: column; min-height: 100vh; min-height: 100dvh;
+  padding: 22px 28px 40px;
+  container: inline-size / main-layout;
+}
+
+.main > section[role="tabpanel"] {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+.topbar {
+  display: flex; justify-content: space-between; align-items: center; gap: 16px;
+  margin-bottom: 18px;
+}
+.brand { display: flex; align-items: center; gap: 12px; }
+.brand-mark {
+  width: 40px; height: 40px; border-radius: 12px;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  color: white; display: grid; place-items: center; font-weight: 800;
+  box-shadow: var(--shadow-sm);
+}
+.brand-title { font-weight: 700; font-size: 16px; }
+.brand-sub { color: var(--muted); font-size: 12px; }
+
+.top-tabs {
+  display: flex; gap: 8px; border-bottom: 1px solid var(--line); margin: 0 0 -22px;
+  padding: 0 0 14px;
+}
+.top-tab {
+  padding: 8px 12px; border-radius: 10px 10px 0 0;
+  background: transparent; border: none; color: var(--muted); font-weight: 600;
+  cursor: pointer; transition: all .15s;
+}
+.top-tab:hover { color: var(--ink-2); background: rgba(0,0,0,.02); }
+.top-tab.active { color: var(--accent); background: rgba(139,124,255,.05); border-bottom: 2px solid var(--accent); }
+
+.toolbar {
+  display: flex; justify-content: space-between; align-items: center; gap: 16px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.month-nav { display: flex; align-items: center; gap: 10px; }
+.toolbar-actions { display: flex; align-items: center; gap: 10px; }
+.excel-export-btn {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  line-height: 0;
+  background: linear-gradient(135deg, #dbeafe, #bfdbfe);
+  border-color: #93c5fd;
+  color: #1e3a8a;
+}
+.excel-export-btn:hover {
+  background: linear-gradient(135deg, #bfdbfe, #93c5fd);
+  border-color: #60a5fa;
+}
+.excel-export-btn:disabled {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+  color: #94a3b8;
+}
+.excel-export-icon {
+  width: 18px;
+  height: 18px;
+  display: block;
+  margin: 0;
+  flex: 0 0 auto;
+}
+.month-title {
+  margin: 0; font-size: 26px; font-weight: 800; letter-spacing: -0.02em;
+}
+.month-title span { color: var(--muted); font-weight: 600; }
+
+.mode-toggle {
+  display: flex; gap: 4px; background: var(--bg-elev);
+  border: 1px solid var(--line); border-radius: 10px; padding: 4px;
+  box-shadow: var(--shadow-sm);
+}
+.mode-btn {
+  padding: 6px 12px; border-radius: 8px; border: none;
+  background: transparent; color: var(--muted); font-weight: 600; font-size: 13px;
+  cursor: pointer; transition: all .15s;
+}
+.mode-btn:hover { background: rgba(0,0,0,.03); }
+.mode-btn.active { background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  color: white; }
+
+/* Botones */
+.btn {
+  border: 1px solid var(--line);
+  background: var(--bg-elev);
+  color: var(--ink);
+  padding: 8px 12px; border-radius: 10px;
+  font-weight: 600; font-size: 13px;
+  transition: all .15s ease;
+  box-shadow: var(--shadow-sm);
+}
+.btn:hover { border-color: var(--muted); transform: translateY(-1px); }
+.btn-primary {
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  color: white; border-color: transparent;
+}
+.btn-primary:hover { filter: brightness(1.05); }
+.btn-ghost { background: transparent; box-shadow: none; border-color: transparent; color: var(--ink-2); }
+.btn-ghost:hover { background: var(--bg-elev); }
+.btn-dark { background: rgba(0,0,0,.1); color: #e8ddd2; border: none; }
+.btn-dark:hover { background: rgba(0,0,0,.15); }
+.btn-icon {
+  width: 36px; height: 36px; padding: 0; display: inline-grid; place-items: center;
+  border-radius: 10px; font-size: 18px; line-height: 1;
+}
+.btn-link { background: transparent; border: none; box-shadow: none; color: var(--muted); padding: 4px 6px; }
+.btn-link.danger { color: var(--danger); }
+.btn-link:hover { text-decoration: underline; }
+
+/* ---------- Monthly split layout ---------- */
+.monthly-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
+  gap: 20px;
+  align-items: start;
+}
+.monthly-left {
+  display: flex; flex-direction: column; gap: 20px; min-width: 0;
+  isolation: isolate;
+}
+.monthly-right {
+  position: sticky; top: 22px;
+  isolation: isolate;
+}
+

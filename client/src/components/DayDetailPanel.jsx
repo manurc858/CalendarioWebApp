@@ -584,6 +584,7 @@ export default function DayDetailPanel({ date, laborMap, projects, onReload }) {
                       <div className="meeting-header">
                         <div className="meeting-title">
                           {m.isCustom && <span className="meeting-custom-badge">✦</span>}
+                          {m.repeat === 'weekly' && <span className="meeting-recurring-badge" title="Se repite cada semana">↻</span>}
                           {m.title}
                         </div>
                         {mMins > 0 && <span className="meeting-dur">{mMins >= 60 ? `${Math.floor(mMins/60)}h${mMins%60 ? ` ${mMins%60}m` : ''}` : `${mMins}m`}</span>}
@@ -628,6 +629,7 @@ export default function DayDetailPanel({ date, laborMap, projects, onReload }) {
                           <button
                             className="btn-delete"
                             onClick={async () => {
+                              if (m.repeat === 'weekly' && !confirm('Esta reunión se repite cada semana. Se eliminará la serie completa. ¿Continuar?')) return;
                               await api.deleteCustomMeeting(m.customId);
                               reload();
                               onReload?.();

@@ -11,6 +11,8 @@ export default function CreateMeetingModal({ initialDate, onClose, onCreated }) 
   const [startTime, setStartTime] = useState('');
   const [endTime, setEndTime] = useState('');
   const [allDay, setAllDay] = useState(false);
+  const [repeatWeekly, setRepeatWeekly] = useState(false);
+  const [repeatUntil, setRepeatUntil] = useState('');
 
   useEffect(() => {
     const endInput = endTimeRef.current;
@@ -34,6 +36,8 @@ export default function CreateMeetingModal({ initialDate, onClose, onCreated }) 
       start_time: allDay ? null : startTime || null,
       end_time: allDay ? null : endTime || null,
       all_day: allDay,
+      repeat: repeatWeekly ? 'weekly' : 'none',
+      repeat_until: repeatWeekly ? (repeatUntil || null) : null,
     });
     onCreated?.();
     onClose();
@@ -133,6 +137,27 @@ export default function CreateMeetingModal({ initialDate, onClose, onCreated }) 
                   required={!allDay}
                 />
               </div>
+            </div>
+          )}
+          <div className="cm-field cm-checkbox">
+            <label>
+              <input
+                type="checkbox"
+                checked={repeatWeekly}
+                onChange={e => setRepeatWeekly(e.target.checked)}
+              />
+              Repetir cada semana
+            </label>
+          </div>
+          {repeatWeekly && (
+            <div className="cm-field">
+              <label>Repetir hasta (opcional)</label>
+              <FlowbiteDateInput
+                value={repeatUntil}
+                onValueChange={setRepeatUntil}
+                className="inline-input"
+                placeholder="Sin fecha fin"
+              />
             </div>
           )}
           <div className="mn-editor-foot">

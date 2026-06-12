@@ -3,6 +3,7 @@ import { api } from '../api.js';
 import { iso, addDays, MONTH_NAMES, LABOR_TYPES, effectiveLabor } from '../utils.js';
 import MeetingNotesEditor from './MeetingNotesEditor.jsx';
 import CreateMeetingModal from './CreateMeetingModal.jsx';
+import CreateTaskModal from './CreateTaskModal.jsx';
 import FlowbiteDateInput from './FlowbiteDateInput.jsx';
 
 const DOW_SHORT = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
@@ -73,8 +74,13 @@ function dedupeMeetingsForDay(meetings = []) {
   });
 }
 
-export default function WeeklyView({ today, onReload, laborMap = {} }) {
+export default function WeeklyView({ today, onReload, laborMap = {}, resetSignal = 0 }) {
   const [weekOffset, setWeekOffset] = useState(0);
+
+  // El orbe "Hoy" del dock móvil incrementa resetSignal: volver a la semana actual
+  useEffect(() => {
+    if (resetSignal > 0) setWeekOffset(0);
+  }, [resetSignal]);
   const [weekTodos, setWeekTodos] = useState({});
   const [weekMeetings, setWeekMeetings] = useState({});
   const [overdue, setOverdue] = useState([]);
@@ -86,6 +92,7 @@ export default function WeeklyView({ today, onReload, laborMap = {} }) {
   const [weekendOpen, setWeekendOpen] = useState(false);
   const [notesEditor, setNotesEditor] = useState(null);
   const [showCreateMeeting, setShowCreateMeeting] = useState(null); // date string or null
+  const [showCreateTask, setShowCreateTask] = useState(null); // date string or null
 
   const todayIso = iso(today);
   const baseDate = new Date(today);
@@ -302,6 +309,7 @@ export default function WeeklyView({ today, onReload, laborMap = {} }) {
         <div className="wv-col-head">
           <span className="wv-col-dow">{DOW_SHORT[i]}</span>
           <span className={`wv-col-num ${isToday ? 'today' : ''}`}>{d.getDate()}</span>
+          <button className="wv-col-add-task" onClick={() => setShowCreateTask(dateIso)} title="Nueva tarea">+✓</button>
           <button className="wv-col-add-meeting" onClick={() => setShowCreateMeeting(dateIso)} title="Nueva reunión">+📅</button>
         </div>
         {labelText && (
@@ -329,7 +337,10 @@ export default function WeeklyView({ today, onReload, laborMap = {} }) {
                   <div key={`${m.uid}|${m.date}|${m.startTime || ''}|${m.endTime || ''}|${m.title || ''}`} className={`wv-meeting ${m.isCustom ? 'custom' : ''}`}>
                     <div className="wv-meeting-color" style={{ background: m.project_color || (m.isCustom ? '#a78bfa' : '#64748b') }} />
                     <div className="wv-meeting-info">
-                      <span className="wv-meeting-title">{m.title}</span>
+                      <span className="wv-meeting-title">
+                        {m.repeat === 'weekly' && <span className="meeting-recurring-badge" title="Se repite cada semana">↻</span>}
+                        {m.title}
+                      </span>
                       <span className="wv-meeting-time">
                         {m.allDay ? 'Todo el día' : `${m.startTime || ''}${m.endTime ? `–${m.endTime}` : ''}`}
                       </span>
@@ -352,7 +363,11 @@ export default function WeeklyView({ today, onReload, laborMap = {} }) {
                     {m.isCustom && (
                       <button
                         className="btn-delete wv-task-del"
-                        onClick={async () => { await api.deleteCustomMeeting(m.customId); reloadAll(); }}
+                        onClick={async () => {
+                          if (m.repeat === 'weekly' && !confirm('Esta reunión se repite cada semana. Se eliminará la serie completa. ¿Continuar?')) return;
+                          await api.deleteCustomMeeting(m.customId);
+                          reloadAll();
+                        }}
                       >✕</button>
                     )}
                   </div>
@@ -439,8 +454,8 @@ export default function WeeklyView({ today, onReload, laborMap = {} }) {
           onDragLeave={() => setDropTarget(null)}
           onDrop={handleDropUnassign}
         >
-          {/* Creator */}
-          <div className="wv-panel-section">
+          {/* Creator (oculto en móvil: allí se usan los botones +✓ de cada día) */}
+          <div className="wv-panel-section wv-creator-section">
             <div className="wv-panel-title">✏️ Nueva tarea</div>
             <form className="wv-creator-form" onSubmit={addTodo}>
               <input
@@ -579,6 +594,15 @@ export default function WeeklyView({ today, onReload, laborMap = {} }) {
         <CreateMeetingModal
           initialDate={showCreateMeeting}
           onClose={() => setShowCreateMeeting(null)}
+          onCreated={reloadAll}
+        />
+      )}
+
+      {/* Create Task Modal */}
+      {showCreateTask && (
+        <CreateTaskModal
+          initialDate={showCreateTask}
+          onClose={() => setShowCreateTask(null)}
           onCreated={reloadAll}
         />
       )}

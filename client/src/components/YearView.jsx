@@ -3,7 +3,7 @@ import { LABOR_TYPES, MONTH_NAMES, iso, isWeekend, calcMeetingHours } from '../u
 import { api } from '../api.js';
 
 export default function YearView({
-  year, laborMap, activeType, onChange, onJump
+  year, laborMap, activeType, onChange, onJump, onDayPeek
 }) {
   const [painting, setPainting] = useState(false);
   const [popup, setPopup] = useState(null); // { date, data, x, y }
@@ -88,6 +88,9 @@ export default function YearView({
       const current = laborMap[key];
       if (current?.type === activeType) onChange(key, null);
       else onChange(key, activeType);
+    } else if (onDayPeek && window.matchMedia('(max-width: 768px)').matches) {
+      // Móvil: bottom sheet con el detalle del día (igual que la vista mensual)
+      onDayPeek(key);
     } else {
       // Open day detail popup
       lastTriggerRef.current = e.currentTarget;

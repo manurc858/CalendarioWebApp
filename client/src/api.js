@@ -1,11 +1,24 @@
 const BASE = '/api';
 
+// Notifica a la app cuando se pierde/recupera la conexión con el servidor
+function emitApiStatus(ok) {
+  window.dispatchEvent(new CustomEvent('api-status', { detail: { ok } }));
+}
+
 async function req(path, opts = {}) {
-  const res = await fetch(BASE + path, {
-    headers: { 'Content-Type': 'application/json' },
-    ...opts,
-    body: opts.body ? JSON.stringify(opts.body) : undefined,
-  });
+  let res;
+  try {
+    res = await fetch(BASE + path, {
+      headers: { 'Content-Type': 'application/json' },
+      ...opts,
+      body: opts.body ? JSON.stringify(opts.body) : undefined,
+    });
+  } catch (err) {
+    // fetch solo lanza si no hay conexión (servidor caído, red, CORS)
+    emitApiStatus(false);
+    throw err;
+  }
+  emitApiStatus(true);
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
   return res.json();
 }
@@ -13,7 +26,7 @@ async function req(path, opts = {}) {
 export const api = {
   // projects
   listProjects: () => req('/projects'),
-  projectStats: (from, to) => req(`/projects/stats${from && to ? `?from=${from}&to=${to}` : ''}`),
+  projectStats: (from, to) => req(`/projects/stats${from && to ? `?${new URLSearchParams({ from, to })}` : ''}`),
   createProject: (data) => req('/projects', { method: 'POST', body: data }),
   updateProject: (id, data) => req(`/projects/${id}`, { method: 'PUT', body: data }),
   deleteProject: (id) => req(`/projects/${id}`, { method: 'DELETE' }),
@@ -38,7 +51,7 @@ export const api = {
   reorderTodos: (date, orderedIds) => req('/todos/reorder', { method: 'PUT', body: { date: date ?? null, orderedIds } }),
   deleteTodo: (id) => req(`/todos/${id}`, { method: 'DELETE' }),
   carryOverTodo: (id, toDate) => req(`/todos/${id}/carry-over`, { method: 'POST', body: toDate ? { to_date: toDate } : {} }),
-  overdueTodos: (before) => req(`/todos/overdue?before=${before}`),
+  overdueTodos: (before) => req(`/todos/overdue?${new URLSearchParams({ before })}`),
   unassignedTodos: () => req('/todos/unassigned'),
 
   // events
@@ -51,7 +64,7 @@ export const api = {
   deleteEvent: (id) => req(`/events/${id}`, { method: 'DELETE' }),
 
   // labor
-  listLabor: (from, to) => req(`/labor?from=${from}&to=${to}`),
+  listLabor: (from, to) => req(`/labor?${new URLSearchParams({ from, to })}`),
   setLabor: (date, data) => req(`/labor/${date}`, { method: 'PUT', body: data }),
   clearLabor: (date) => req(`/labor/${date}`, { method: 'DELETE' }),
 
@@ -84,7 +97,7 @@ export const api = {
 
   // meeting notes
   getMeetingNotes: (meeting_type, meeting_ref, meeting_date) =>
-    req(`/meeting-notes?meeting_type=${meeting_type}&meeting_ref=${meeting_ref}&meeting_date=${meeting_date}`),
+    req(`/meeting-notes?${new URLSearchParams({ meeting_type, meeting_ref, meeting_date })}`),
   saveMeetingNotes: (data) => req('/meeting-notes', { method: 'PUT', body: data }),
 
   // AI Chat

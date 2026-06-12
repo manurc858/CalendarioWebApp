@@ -1,4 +1,6 @@
-import db from './db.js';
+import './env.js';
+import { dbGet, dbRun, initDb } from './db.js';
+import { localIso } from './dates.js';
 
 // Calendario laboral Madrid 2026 (según imagen proporcionada)
 const holidays = [
@@ -26,23 +28,26 @@ const holidays = [
   ['2026-12-31', 'festivo_idom',  'Nochevieja'],
 ];
 
-const upsert = db.prepare(`INSERT INTO labor_days(date, type, label) VALUES(?,?,?)
-  ON CONFLICT(date) DO UPDATE SET type=excluded.type, label=excluded.label`);
+await initDb();
 
-const tx = db.transaction(() => {
-  // findes del año (si no están ya marcados)
-  const start = new Date('2026-01-01');
-  const end = new Date('2026-12-31');
-  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-    const dow = d.getDay(); // 0 dom, 6 sab
-    if (dow === 0 || dow === 6) {
-      const iso = d.toISOString().slice(0, 10);
-      const existing = db.prepare('SELECT * FROM labor_days WHERE date=?').get(iso);
-      if (!existing) upsert.run(iso, 'finde', null);
-    }
+const upsert = (date, type, label) => dbRun(
+  `INSERT INTO labor_days(date, type, label) VALUES(?,?,?)
+   ON CONFLICT(date) DO UPDATE SET type=excluded.type, label=excluded.label`,
+  date, type, label
+);
+
+// findes del año (si no están ya marcados)
+const start = new Date(2026, 0, 1);
+const end = new Date(2026, 11, 31);
+for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+  const dow = d.getDay(); // 0 dom, 6 sab
+  if (dow === 0 || dow === 6) {
+    const iso = localIso(d);
+    const existing = await dbGet('SELECT date FROM labor_days WHERE date=?', iso);
+    if (!existing) await upsert(iso, 'finde', null);
   }
-  for (const [date, type, label] of holidays) upsert.run(date, type, label);
-});
-tx();
+}
+for (const [date, type, label] of holidays) await upsert(date, type, label);
 
 console.log('Seed completado: calendario laboral Madrid 2026.');
+process.exit(0);

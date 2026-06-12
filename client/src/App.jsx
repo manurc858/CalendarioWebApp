@@ -5,11 +5,15 @@ import Calendar from './components/Calendar.jsx';
 import DayDetailPanel from './components/DayDetailPanel.jsx';
 import LaborSidebar from './components/LaborSidebar.jsx';
 import WeeklyView from './components/WeeklyView.jsx';
+import MobileNav from './components/MobileNav.jsx';
+import DaySheet from './components/DaySheet.jsx';
+import TodayScreen from './components/TodayScreen.jsx';
 import { LABOR_TYPES, LABOR_ORDER } from './utils.js';
 
 const YearView = lazy(() => import('./components/YearView.jsx'));
 const ProjectsPage = lazy(() => import('./components/ProjectsPage.jsx'));
-const PixelAgent = lazy(() => import('./components/PixelAgent.jsx'));
+// DESACTIVADO (no eliminar): PixelAgent (agente IA gemma)
+// const PixelAgent = lazy(() => import('./components/PixelAgent.jsx'));
 
 export default function App() {
   const today = new Date();
@@ -18,7 +22,10 @@ export default function App() {
   const [view, setView] = useState('weekly'); // 'weekly' | 'monthly' | 'annual' | 'projects'
   const [activeType, setActiveType] = useState('vacaciones');
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [showPixelAgent, setShowPixelAgent] = useState(false);
+  // DESACTIVADO (no eliminar): estado del PixelAgent (agente IA gemma)
+  // const [showPixelAgent, setShowPixelAgent] = useState(false);
+
+  const [apiOffline, setApiOffline] = useState(false);
 
   const [projects, setProjects] = useState([]);
   const [projectStats, setProjectStats] = useState([]);
@@ -89,6 +96,22 @@ export default function App() {
     }
   }, [cursor]);
 
+  // Banner de conexión: escucha el estado de las llamadas a la API
+  useEffect(() => {
+    const onApiStatus = (e) => setApiOffline(!e.detail.ok);
+    window.addEventListener('api-status', onApiStatus);
+    return () => window.removeEventListener('api-status', onApiStatus);
+  }, []);
+
+  // Mientras está offline, reintenta cada 10s para detectar la recuperación
+  useEffect(() => {
+    if (!apiOffline) return;
+    const id = setInterval(() => {
+      api.getSettings().then(() => { reloadMonth(); reloadLabor(); }).catch(() => {});
+    }, 10000);
+    return () => clearInterval(id);
+  }, [apiOffline, reloadMonth, reloadLabor]);
+
   useEffect(() => { reloadProjects(); reloadSettings(); }, [reloadProjects, reloadSettings]);
   useEffect(() => { reloadLabor(); reloadMonth(); }, [reloadLabor, reloadMonth]);
 
@@ -99,6 +122,8 @@ export default function App() {
     return () => clearInterval(id);
   }, [reloadMonth]);
 
+  // DESACTIVADO (no eliminar): carga diferida del PixelAgent (agente IA gemma)
+  /*
   useEffect(() => {
     const hasIdle = typeof window.requestIdleCallback === 'function';
     const scheduleId = hasIdle
@@ -110,6 +135,7 @@ export default function App() {
       else clearTimeout(scheduleId);
     };
   }, []);
+  */
 
   const vacationTotal = parseInt(settings.vacation_total || '23', 10);
   const vacationUsed = useMemo(
@@ -120,7 +146,25 @@ export default function App() {
   const prevMonth = () => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1));
   const nextMonth = () => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1));
   const goToday = () => setCursor(new Date(today.getFullYear(), today.getMonth(), 1));
-  const handleDayClick = (dateIso) => setSelectedDay(dateIso);
+
+  // Bottom sheet móvil con el detalle de un día (mensual, anual y orbe "Hoy")
+  const [daySheet, setDaySheet] = useState(null); // date iso o null
+  const isMobile = () => window.matchMedia('(max-width: 768px)').matches;
+
+  // Orbe "Hoy" del dock móvil: vuelve a hoy y abre la pantalla de hoy
+  const [todayTick, setTodayTick] = useState(0);
+  const [todayOpen, setTodayOpen] = useState(false);
+  const handleGoToday = () => {
+    goToday();
+    setSelectedDay(iso(today));
+    setTodayTick(t => t + 1); // resetea la semana en WeeklyView
+    setTodayOpen(true);
+  };
+  const handleDayClick = (dateIso) => {
+    setSelectedDay(dateIso);
+    // En móvil el detalle del día se abre como bottom sheet
+    if (isMobile()) setDaySheet(dateIso);
+  };
 
   const handleLaborChange = async (date, type) => {
     if (type === null) await api.clearLabor(date);
@@ -214,6 +258,12 @@ export default function App() {
 
   return (
     <div className={`app ${sidebarOpen ? '' : 'sidebar-collapsed'}`}>
+      {apiOffline && (
+        <div className="api-offline-banner" role="alert">
+          <span className="api-offline-dot" aria-hidden="true" />
+          Sin conexión con el servidor — reintentando…
+        </div>
+      )}
       <aside className="sidebar">
         {sidebarOpen ? (
           <div className="sidebar-inner">
@@ -309,7 +359,7 @@ export default function App() {
                     <input
                       type="number" min="0" max="60"
                       value={vacationTotal}
-                      onChange={e => { api.setSetting('vacation_total', e.target.value); reloadSettings(); }}
+                      onChange={async e => { await api.setSetting('vacation_total', e.target.value); reloadSettings(); }}
                       className="vac-total-input"
                       title="Total días de vacaciones"
                     />
@@ -356,6 +406,7 @@ export default function App() {
               today={today}
               onReload={reloadMonth}
               laborMap={laborMap}
+              resetSignal={todayTick}
             />
           </section>
         )}
@@ -446,6 +497,29 @@ export default function App() {
                 <button className="btn btn-ghost" onClick={goToday}>Hoy</button>
               </div>
             </section>
+            {/* Herramientas táctiles (solo móvil): vacaciones + pincel en chips */}
+            <div className="mobile-annual-tools">
+              <div className="mat-vac">
+                <span>🏖️ <b>{vacationTotal - vacationUsed}</b> días restantes</span>
+                <div className="mat-vac-bar">
+                  <div className="mat-vac-fill" style={{ width: `${vacationTotal > 0 ? Math.min(100, (vacationUsed / vacationTotal) * 100) : 0}%` }} />
+                </div>
+              </div>
+              <div className="mat-brushes" role="radiogroup" aria-label="Pincel de tipo de día">
+                {LABOR_ORDER.filter(t => t !== 'laborable' && t !== 'finde').map(t => (
+                  <button
+                    key={t}
+                    role="radio"
+                    aria-checked={activeType === t}
+                    className={`mat-brush ${activeType === t ? 'active' : ''}`}
+                    onClick={() => setActiveType(t)}
+                  >
+                    <span className="mat-brush-swatch" style={{ background: LABOR_TYPES[t].color }} />
+                    {LABOR_TYPES[t].label}
+                  </button>
+                ))}
+              </div>
+            </div>
             <Suspense fallback={<div className="panel-loader">Cargando vista anual…</div>}>
               <YearView
                 year={cursor.getFullYear()}
@@ -453,6 +527,7 @@ export default function App() {
                 activeType={activeType}
                 onChange={handleLaborChange}
                 onJump={(d) => { jumpToMonth(d); setView('monthly'); }}
+                onDayPeek={(d) => setDaySheet(d)}
               />
             </Suspense>
           </section>
@@ -489,11 +564,32 @@ export default function App() {
           </section>
         )}
       </main>
+      <MobileNav view={view} onChangeView={setView} onToday={handleGoToday} todayDate={today} />
+      {daySheet && (
+        <DaySheet
+          date={daySheet}
+          laborMap={laborMap}
+          projects={projects}
+          onReload={reloadMonth}
+          onClose={() => { setDaySheet(null); setView('weekly'); }}
+        />
+      )}
+      {todayOpen && (
+        <TodayScreen
+          today={today}
+          laborMap={laborMap}
+          projects={projects}
+          onReload={reloadMonth}
+          onClose={() => setTodayOpen(false)}
+        />
+      )}
+      {/* DESACTIVADO (no eliminar): PixelAgent (agente IA gemma)
       {showPixelAgent && (
         <Suspense fallback={null}>
           <PixelAgent />
         </Suspense>
       )}
+      */}
     </div>
   );
 }

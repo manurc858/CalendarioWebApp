@@ -268,7 +268,7 @@ export default function ProjectsPage({ projects, stats, cursor, laborMap, reload
     : projectById.get(selected)?.statusLabel || 'En ritmo';
 
   return (
-    <div className="proj-layout">
+    <div className={`proj-layout ${selected != null ? 'has-selection' : ''}`}>
       {/* LEFT: project list */}
       <div className="proj-left">
         {/* Create form */}
@@ -380,6 +380,12 @@ export default function ProjectsPage({ projects, stats, cursor, laborMap, reload
 
       {/* RIGHT: detail panel for selected project */}
       <div className="proj-right">
+        {/* Volver a la lista (solo móvil, pantalla de detalle) */}
+        {selected != null && (
+          <button type="button" className="proj-back-btn" onClick={() => setSelected(null)}>
+            ‹ Proyectos
+          </button>
+        )}
         <div className="proj-dashboard">
           <div className="proj-dashboard-head">
             <div>

@@ -1,6 +1,7 @@
 import http from 'node:http';
 import db from './db.js';
 import { getMeetingsInRange } from './outlook.js';
+import { localIso, addDaysIso } from './dates.js';
 
 const LM_STUDIO_URL = process.env.LM_STUDIO_URL || 'http://127.0.0.1:1234';
 const LM_MODEL = process.env.LM_MODEL || 'google/gemma-4-e4b';
@@ -59,9 +60,7 @@ async function buildCompactContext(dateIso) {
 
   // Tareas: hoy + próximos 7 días + vencidas + sin asignar
   try {
-    const weekEnd = new Date(dateIso + 'T00:00:00');
-    weekEnd.setDate(weekEnd.getDate() + 7);
-    const weekEndIso = weekEnd.toISOString().slice(0, 10);
+    const weekEndIso = addDaysIso(dateIso, 7);
 
     ctx.tareas_hoy = db.prepare('SELECT text, done FROM todos WHERE date = ? ORDER BY sort_order, id').all(dateIso)
       .map(t => `[${t.done ? 'HECHA' : 'PENDIENTE'}] ${t.text}`);
@@ -99,9 +98,7 @@ async function buildCompactContext(dateIso) {
 
   // Reuniones: Outlook (ICS cache en memoria) + custom meetings
   try {
-    const weekEnd = new Date(dateIso + 'T00:00:00');
-    weekEnd.setDate(weekEnd.getDate() + 7);
-    const weekEndIso = weekEnd.toISOString().slice(0, 10);
+    const weekEndIso = addDaysIso(dateIso, 7);
 
     const outlookMeetings = await getMeetingsInRange(dateIso, weekEndIso);
 
@@ -199,7 +196,7 @@ export async function saveDailySnapshot(dateIso) {
 // -------- Llamada a LM Studio --------
 
 export async function chatWithAI(conversationId, userMessage) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localIso();
   const context = await buildCompactContext(today);
   const contextStr = JSON.stringify(context);
 
@@ -252,7 +249,7 @@ function scheduleDailySnapshot() {
   const check = async () => {
     const now = new Date();
     if (now.getHours() === 20 && now.getMinutes() === 0) {
-      const dateIso = now.toISOString().slice(0, 10);
+      const dateIso = localIso(now);
       try {
         await saveDailySnapshot(dateIso);
         console.log(`[AI] Snapshot diario guardado: ${dateIso}`);
@@ -264,7 +261,7 @@ function scheduleDailySnapshot() {
   setInterval(check, 60_000);
 
   // Generar snapshot inicial al arrancar
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localIso();
   const existing = db.prepare('SELECT 1 FROM ai_snapshots WHERE snapshot_date = ?').get(today);
   if (!existing) {
     saveDailySnapshot(today).then(() => {

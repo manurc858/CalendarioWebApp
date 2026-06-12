@@ -1,0 +1,41 @@
+/* ---------- Project Hours Panel ---------- */
+.project-hours-panel {
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 18px;
+  box-shadow: var(--shadow);
+  margin-bottom: 24px;
+}
+.project-hours-panel h3 { margin: 0 0 14px; font-size: 14px; }
+.hours-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px;
+}
+.hours-card {
+  background: #faf7f4; border: 1px solid var(--line);
+  border-radius: var(--radius-sm); padding: 12px; display: flex; flex-direction: column; gap: 10px;
+}
+.hours-header {
+  display: flex; align-items: center; gap: 8px;
+  font-weight: 600; font-size: 13px;
+}
+.project-dot { width: 12px; height: 12px; border-radius: 3px; flex: 0 0 auto; }
+.hours-title { flex: 1; }
+.hours-actual { color: var(--accent); font-weight: 700; }
+.hours-bar-row { display: flex; align-items: center; gap: 8px; }
+.hours-bar-track {
+  height: 6px; border-radius: 999px; background: rgba(0,0,0,.08); flex: 1;
+  overflow: hidden;
+}
+.hours-bar-fill { height: 100%; transition: width .3s ease; }
+.hours-footer { font-size: 12px; }
+.hours-sub { color: var(--muted); }
+.hours-link {
+  background: none; border: none; color: var(--accent); font-weight: 600;
+  cursor: pointer; text-decoration: underline; padding: 0;
+}
+.hours-input {
+  width: 50px; padding: 4px 6px; border: 1px solid var(--line);
+  border-radius: 6px; font-size: 12px; font-weight: 600;
+}
+

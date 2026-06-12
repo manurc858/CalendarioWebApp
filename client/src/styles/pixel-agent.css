@@ -1,0 +1,264 @@
+/* =============================================
+   PIXEL AGENT (Animated AI Assistant)
+   ============================================= */
+
+.pixel-agent-container {
+  position: fixed;
+  bottom: 8px;
+  z-index: 900;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transition: left 0.03s linear;
+  pointer-events: none;
+}
+
+.pixel-agent-container > * {
+  pointer-events: auto;
+}
+
+.pixel-agent-sprite {
+  cursor: pointer;
+  transition: filter 0.2s;
+  position: relative;
+  flex-shrink: 0;
+}
+.pixel-agent-sprite:hover {
+  filter: drop-shadow(0 0 6px rgba(139,124,255,.7)) brightness(1.1);
+}
+.pixel-agent-sprite.active {
+  filter: drop-shadow(0 0 8px rgba(139,124,255,.9));
+}
+.pixel-agent-sprite.error {
+  animation: pixelShake 0.4s ease-in-out;
+  filter: drop-shadow(0 0 6px rgba(211,47,47,.7)) hue-rotate(-40deg) saturate(2);
+}
+
+@keyframes pixelShake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-4px); }
+  40% { transform: translateX(4px); }
+  60% { transform: translateX(-3px); }
+  80% { transform: translateX(3px); }
+}
+
+/* Status dot under the character */
+.pixel-agent-status {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-top: 2px;
+  transition: background 0.3s;
+  box-shadow: 0 0 4px currentColor;
+}
+.pixel-agent-status.sleeping { background: #9ca3af; color: #9ca3af; }
+.pixel-agent-status.idle { background: #34d399; color: #34d399; }
+.pixel-agent-status.walking { background: #34d399; color: #34d399; }
+.pixel-agent-status.thinking { background: #fbbf24; color: #fbbf24; animation: statusPulse 1s ease-in-out infinite; }
+.pixel-agent-status.responding { background: #8b7cff; color: #8b7cff; }
+.pixel-agent-status.error { background: #ef4444; color: #ef4444; }
+
+@keyframes statusPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.7); }
+}
+
+/* Sleeping Zzz */
+.pixel-agent-zzz {
+  position: absolute;
+  top: -10px;
+  right: -14px;
+  display: flex;
+  gap: 1px;
+  pointer-events: none;
+}
+.pixel-agent-zzz span {
+  font-family: 'Press Start 2P', 'Courier New', monospace;
+  color: #9ca3af;
+  font-size: 10px;
+  font-weight: 700;
+  animation: zzzFloat 2s ease-in-out infinite;
+  opacity: 0.6;
+}
+.pixel-agent-zzz span:nth-child(1) { font-size: 8px; animation-delay: 0s; }
+.pixel-agent-zzz span:nth-child(2) { font-size: 10px; animation-delay: 0.4s; }
+.pixel-agent-zzz span:nth-child(3) { font-size: 13px; animation-delay: 0.8s; }
+
+@keyframes zzzFloat {
+  0%, 100% { transform: translateY(0); opacity: 0.4; }
+  50% { transform: translateY(-6px); opacity: 0.9; }
+}
+
+/* Speech bubble */
+.pixel-bubble {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 340px;
+  max-height: 420px;
+  background: var(--bg-elev);
+  border: 2px solid var(--line);
+  border-radius: 14px;
+  box-shadow: var(--shadow-lg);
+  margin-bottom: 8px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: bubblePop 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes bubblePop {
+  from { opacity: 0; transform: translateX(-50%) scale(0.85) translateY(8px); }
+  to { opacity: 1; transform: translateX(-50%) scale(1) translateY(0); }
+}
+
+.pixel-bubble-arrow {
+  position: absolute;
+  bottom: -8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 14px;
+  height: 8px;
+  overflow: hidden;
+}
+.pixel-bubble-arrow::before {
+  content: '';
+  position: absolute;
+  top: -7px;
+  left: 50%;
+  transform: translateX(-50%) rotate(45deg);
+  width: 12px;
+  height: 12px;
+  background: var(--bg-elev);
+  border: 2px solid var(--line);
+  border-top: none;
+  border-left: none;
+}
+
+/* Chat history inside bubble */
+.pixel-bubble-history {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px 12px;
+  max-height: 280px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.pixel-bubble-msg {
+  display: flex;
+}
+.pixel-bubble-msg.user {
+  justify-content: flex-end;
+}
+.pixel-bubble-msg.user .pixel-bubble-text {
+  background: var(--accent);
+  color: white;
+  border-radius: 10px 10px 4px 10px;
+  padding: 6px 10px;
+  font-size: 12px;
+  max-width: 85%;
+  word-break: break-word;
+}
+.pixel-bubble-msg.assistant .pixel-bubble-text {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 10px 10px 10px 4px;
+  padding: 6px 10px;
+  font-size: 12px;
+  max-width: 90%;
+  word-break: break-word;
+  color: var(--ink);
+}
+.pixel-bubble-msg.assistant .pixel-bubble-text.chat-md {
+  white-space: normal;
+}
+
+/* Thinking dots */
+.pixel-bubble-thinking {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 12px;
+  font-family: 'Press Start 2P', 'Courier New', monospace;
+  flex-direction: column;
+}
+.pixel-status-label {
+  font-size: 9px;
+  color: var(--text-secondary);
+  margin-bottom: 2px;
+}
+.pixel-dots {
+  display: flex;
+  gap: 3px;
+}
+.pixel-dots span {
+  font-size: 18px;
+  font-weight: 900;
+  color: var(--accent);
+  animation: thinkDot 1.4s ease-in-out infinite;
+}
+.pixel-dots span:nth-child(2) { animation-delay: 0.2s; }
+.pixel-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes thinkDot {
+  0%, 60%, 100% { opacity: 0.2; transform: translateY(0); }
+  30% { opacity: 1; transform: translateY(-4px); }
+}
+
+/* Error */
+.pixel-bubble-error {
+  text-align: center;
+  color: var(--danger);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 6px 12px;
+}
+
+/* Input form */
+.pixel-bubble-form {
+  display: flex;
+  gap: 4px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--line);
+  flex-shrink: 0;
+}
+.pixel-bubble-input {
+  flex: 1;
+  border: 1.5px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  background: var(--bg);
+  outline: none;
+  transition: border-color 0.12s;
+}
+.pixel-bubble-input:focus {
+  border-color: var(--accent);
+}
+.pixel-bubble-send {
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 8px;
+  background: var(--accent);
+  color: white;
+  font-size: 13px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.12s, opacity 0.12s;
+}
+.pixel-bubble-send:disabled { opacity: 0.4; cursor: default; }
+.pixel-bubble-send:hover:not(:disabled) { background: var(--accent-2); }
+
+@media (max-width: 480px) {
+  .pixel-bubble {
+    width: calc(100vw - 40px);
+    max-height: 60vh;
+  }
+}
+

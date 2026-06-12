@@ -1,0 +1,153 @@
+/* ---------- Year View (full page) ---------- */
+.year-view {
+  flex: 1; padding: 4px 0;
+}
+.year-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+}
+.year-month-card {
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px;
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow .15s;
+  content-visibility: auto;
+  contain-intrinsic-size: 280px;
+}
+.year-month-card:hover { box-shadow: var(--shadow); }
+.year-month-title {
+  font-size: 14px; font-weight: 700; color: var(--ink);
+  margin-bottom: 8px; background: transparent; border: none;
+  cursor: pointer; padding: 0; width: 100%; text-align: left;
+  transition: color .15s;
+}
+.year-month-title:hover { color: var(--accent); }
+.year-dow, .year-day-grid {
+  display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px;
+}
+.year-dow-cell {
+  text-align: center; font-size: 10px; color: var(--muted);
+  font-weight: 600; padding-bottom: 4px;
+}
+.year-day {
+  aspect-ratio: 1 / 1;
+  border: none; border-radius: 6px;
+  font-size: 12px; font-weight: 600;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: transform .08s, box-shadow .1s;
+  position: relative;
+}
+.year-day:hover { transform: scale(1.12); box-shadow: 0 2px 6px rgba(0,0,0,.1); z-index: 2; }
+.year-day.painting { cursor: crosshair; }
+.year-day.yv-today { outline: 2px solid var(--accent); outline-offset: -1px; }
+.year-day.empty { background: transparent; cursor: default; }
+.year-day.empty:hover { transform: none; box-shadow: none; }
+
+.yv-event-dot {
+  position: absolute; top: 2px; right: 2px;
+  width: 5px; height: 5px; border-radius: 50%;
+  background: var(--accent); pointer-events: none;
+}
+
+/* Special days: tinted gradient + accent border */
+.year-day.special {
+  background:
+    linear-gradient(180deg,
+      var(--day-color) 0%,
+      color-mix(in srgb, var(--day-color) 60%, white) 100%);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--day-text) 20%, transparent);
+  border-top: 2px solid var(--day-text);
+}
+
+/* Year view toolbar */
+.yv-toolbar {
+  display: flex; align-items: center; gap: 12px;
+  margin-bottom: 12px; flex-wrap: wrap;
+}
+.yv-pincel-btn {
+  padding: 7px 16px; border-radius: 10px; border: 1.5px solid var(--line);
+  background: white; font-size: 13px; font-weight: 600; cursor: pointer;
+  transition: all .15s; color: var(--ink-2);
+}
+.yv-pincel-btn:hover { border-color: var(--accent); color: var(--accent); }
+.yv-pincel-btn.active {
+  background: var(--accent); color: white; border-color: var(--accent);
+}
+.yv-pincel-hint { font-size: 12px; color: var(--muted); }
+
+/* Day popup overlay + card */
+.yv-popup-overlay {
+  position: fixed; inset: 0; z-index: 999; background: rgba(0,0,0,.15);
+}
+.yv-popup {
+  position: fixed; z-index: 1000; inline-size: min(92vw, 350px);
+  background: white; border: 1.5px solid var(--line); border-radius: 14px;
+  box-shadow: 0 8px 32px rgba(0,0,0,.18); overflow: hidden;
+}
+.yv-popup-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 16px; border-bottom: 1px solid var(--line);
+  background: var(--bg-1);
+}
+.yv-popup-date { font-weight: 700; font-size: 14px; color: var(--ink); }
+.yv-popup-close {
+  background: none; border: none; font-size: 16px; cursor: pointer;
+  color: var(--muted); padding: 0 4px; line-height: 1;
+}
+.yv-popup-close:hover { color: var(--ink); }
+.yv-popup-body {
+  padding: 4px 0; max-height: 380px; overflow-y: auto;
+}
+.yv-popup-section {
+  padding: 10px 16px; border-bottom: 1px solid var(--line);
+}
+.yv-popup-section:last-child { border-bottom: none; }
+.yv-popup-label {
+  font-weight: 700; font-size: 12px; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .4px; margin-bottom: 6px;
+}
+.yv-popup-empty { color: var(--muted); font-size: 12px; font-style: italic; }
+.yv-popup-row {
+  display: flex; align-items: center; gap: 8px; padding: 3px 0;
+  font-size: 13px; color: var(--ink-2);
+}
+.yv-popup-row.done { opacity: .5; text-decoration: line-through; }
+.yv-popup-proj { font-weight: 600; }
+.yv-popup-hours {
+  margin-left: auto; font-weight: 700; font-size: 12px;
+  background: var(--bg-1); padding: 2px 8px; border-radius: 6px;
+}
+.yv-popup-note { color: var(--muted); font-size: 11px; }
+.yv-popup-kind {
+  margin-left: auto; font-size: 11px; color: var(--muted);
+  background: var(--bg-1); padding: 1px 6px; border-radius: 6px;
+}
+.yv-popup-event-row {
+  background: #fdf6ec; border-radius: 6px; padding: 6px 10px;
+  border-left: 3px solid #e8c97a;
+}
+.yv-popup-time {
+  margin-left: auto; font-size: 11px; color: var(--muted);
+  white-space: nowrap;
+}
+
+/* Popup work items with better note styling */
+.yv-popup-work-item {
+  padding: 4px 0; font-size: 13px;
+}
+.yv-popup-work-top {
+  display: flex; align-items: center; gap: 8px;
+}
+.yv-popup-work-swatch {
+  width: 4px; height: 16px; border-radius: 3px; flex-shrink: 0;
+}
+.yv-popup-work-note {
+  font-size: 12px; color: var(--ink-2); margin-top: 4px; margin-left: 12px;
+  padding: 4px 8px; background: var(--bg-1); border-radius: 6px;
+  border-left: 3px solid #e0d4ff; line-height: 1.4;
+  white-space: pre-wrap; word-break: break-word;
+}
+
