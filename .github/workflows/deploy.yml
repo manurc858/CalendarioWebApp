@@ -4,7 +4,6 @@ on:
   push:
     branches: [main]
 
-# Permisos para que Actions pueda desplegar en Pages
 permissions:
   contents: read
   pages: write
@@ -21,15 +20,24 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Genera el archivo config.js con los secretos inyectados
-      - name: Generar config.js
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Instalar dependencias
+        working-directory: ./client
+        run: npm install
+
+      - name: Generar .env para el build
+        working-directory: ./client
         run: |
-          cat > config.js << EOF
-          const CONFIG = {
-            DATABASE_URL: "${{ secrets.DATABASE_URL }}",
-            OUTLOOK_ICS_URL: "${{ secrets.OUTLOOK_ICS_URL }}"
-          };
-          EOF
+          echo "VITE_DATABASE_URL=${{ secrets.DATABASE_URL }}" >> .env
+          echo "VITE_OUTLOOK_ICS_URL=${{ secrets.OUTLOOK_ICS_URL }}" >> .env
+
+      - name: Build
+        working-directory: ./client
+        run: npm run build
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
@@ -37,7 +45,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: 'client'   # raíz del repo, cambia si tu web está en otra carpeta
+          path: './client/dist'
 
       - name: Deploy to GitHub Pages
         id: deployment
