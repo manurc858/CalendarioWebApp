@@ -37,7 +37,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: '.'   # raíz del repo, cambia si tu web está en otra carpeta
+          path: 'client'   # raíz del repo, cambia si tu web está en otra carpeta
 
       - name: Deploy to GitHub Pages
         id: deployment
