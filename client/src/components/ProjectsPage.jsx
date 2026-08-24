@@ -73,13 +73,28 @@ export default function ProjectsPage({ projects, stats, cursor, laborMap, reload
   const unassignedWork = monthWork.filter(w => !w.project_id);
 
   const projectInsights = useMemo(() => {
+    // Índices por project_id/id para evitar filter/find O(n*m) dentro del map
+    const workByProject = new Map();
+    monthWork.forEach(w => {
+      if (!w.project_id) return;
+      const list = workByProject.get(w.project_id);
+      if (list) list.push(w); else workByProject.set(w.project_id, [w]);
+    });
+    const meetingsByProject = new Map();
+    monthMeetings.forEach(m => {
+      if (!m.project_id) return;
+      const list = meetingsByProject.get(m.project_id);
+      if (list) list.push(m); else meetingsByProject.set(m.project_id, [m]);
+    });
+    const statById = new Map(stats.map(s => [s.id, s]));
+
     return projects.map((p) => {
-      const projectEntries = monthWork.filter(w => w.project_id === p.id);
-      const projectMeetings = monthMeetings.filter(m => m.project_id === p.id);
+      const projectEntries = workByProject.get(p.id) || [];
+      const projectMeetings = meetingsByProject.get(p.id) || [];
       const totalHours = projectEntries.reduce((sum, work) => sum + (work.hours || 0), 0);
       const meetingHours = calcMeetingHours(projectMeetings);
       const workedHours = totalHours + meetingHours;
-      const stat = stats.find(s => s.id === p.id);
+      const stat = statById.get(p.id);
       const expectedHours = stat?.expected_hours_month || 0;
       const progressPct = expectedHours > 0 ? Math.min(100, (workedHours / expectedHours) * 100) : 0;
       const balance = workedHours - expectedHours;

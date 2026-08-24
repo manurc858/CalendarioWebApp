@@ -137,8 +137,17 @@ export default function WeeklyView({ today, onReload, laborMap = {}, resetSignal
   useEffect(() => { loadTodos(); loadMeetings(); loadOverdue(); loadUnassigned(); }, [loadTodos, loadMeetings, loadOverdue, loadUnassigned]);
 
   useEffect(() => {
-    const id = setInterval(() => { loadTodos(); loadMeetings(); loadOverdue(); loadUnassigned(); }, 5000);
-    return () => clearInterval(id);
+    // Evita sondear la API mientras la pestaña está en segundo plano
+    const poll = () => {
+      if (document.hidden) return;
+      loadTodos(); loadMeetings(); loadOverdue(); loadUnassigned();
+    };
+    const id = setInterval(poll, 5000);
+    document.addEventListener('visibilitychange', poll);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', poll);
+    };
   }, [loadTodos, loadMeetings, loadOverdue, loadUnassigned]);
 
   const handleDragStart = (e, todo) => {
