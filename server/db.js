@@ -181,16 +181,6 @@ if (usingPostgres) {
 // Backend SQLite (agenda.db) — comportamiento original
 // ============================================================
 } else {
-  if (process.env.VERCEL) {
-    // En Vercel no hay disco persistente ni escritura fuera de /tmp:
-    // sin DATABASE_URL el servidor no tiene dónde guardar datos.
-    throw new Error(
-      'DATABASE_URL no está definida. En Vercel es obligatoria: añádela en ' +
-      'Settings → Environment Variables con la connection string de Supabase ' +
-      '(Settings → Database → Connection string → URI, variante "Session pooler") ' +
-      'y vuelve a desplegar.'
-    );
-  }
   const { default: Database } = await import('better-sqlite3');
   const db = new Database(path.join(__dirname, 'agenda.db'));
   db.pragma('journal_mode = WAL');

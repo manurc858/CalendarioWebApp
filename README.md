@@ -92,34 +92,22 @@ npm run migrate:supabase --prefix server
 > El script de migracion es idempotente: vacia las tablas destino y vuelve a copiar.
 > `agenda.db` no se toca; si quitas `DATABASE_URL` vuelves al modo local.
 
-## Despliegue en Vercel
+## Despliegue (URL para el movil)
 
-El proyecto está preparado para desplegarse en [Vercel](https://vercel.com): el
-cliente (`client/dist`) se sirve como estático y la API Express de `server/`
-se ejecuta como función serverless (`api/index.js`), con `vercel.json`
-reescribiendo `/api/*` hacia ella.
+El servidor sirve tambien el cliente compilado (`client/dist`), asi que basta un
+unico servicio Node. Con [Render](https://render.com) (gratis) + GitHub:
 
-1. **Requisito: base de datos en Supabase/Postgres.** Vercel no tiene disco
-   persistente entre invocaciones, así que SQLite (`agenda.db`) no sirve aquí.
-   Sigue la sección "Supabase (multi-dispositivo)" de más arriba para migrar
-   los datos si aún usas SQLite local.
-2. En [vercel.com](https://vercel.com): **New Project** → importa este repo de GitHub.
-3. Vercel detecta `vercel.json` automáticamente (build/instalación/rewrites/cron ya configurados).
-4. Variables de entorno del proyecto en Vercel (**Settings → Environment Variables**):
-   - `DATABASE_URL` — la *connection string* de Supabase (Settings → Database →
-     Connection string → URI, variante *Session pooler*). **Nunca la subas al repo.**
-   - `OUTLOOK_ICS_URL` (opcional).
-   - `CRON_SECRET` (opcional) — si la defines, el cron diario de reuniones
-     (`api/cron/cache-meetings.js`) solo se ejecuta con esa cabecera `Authorization`.
-5. Despliega. Vercel te da una URL `https://tu-app.vercel.app` — API y cliente
-   sirven desde el mismo dominio, así que `client/src/api.js` no necesita
-   `VITE_API_URL` (usa `/api` relativo por defecto).
+1. Sube el repo a GitHub.
+2. En Render: **New → Web Service**, conecta el repo.
+3. Configuracion:
+   - **Build command:** `npm install && npm install --prefix server && npm install --prefix client && npm run build --prefix client`
+   - **Start command:** `npm start --prefix server`
+4. Variables de entorno en Render: `DATABASE_URL` (la de Supabase, variante *Session pooler*) y `OUTLOOK_ICS_URL` (opcional).
+5. Render te da una URL `https://tu-app.onrender.com` — esa es la que abres desde el movil.
 
-> La copia diaria de reuniones de Outlook se hace con un **Vercel Cron Job**
-> (definido en `vercel.json`), ya que en serverless no hay proceso persistente
-> para el `setInterval` que se usa en local.
+> El tier gratuito de Render duerme tras 15 min sin uso; la primera visita tarda ~30 s en despertar.
 
-### Comprobación rápida antes de hacer push
+### Comprobacion rapida antes de hacer push
 
 ```powershell
 git status --ignored

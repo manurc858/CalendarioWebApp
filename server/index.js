@@ -26,8 +26,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// En Vercel cada invocación puede ser una instancia nueva: esta promesa se
-// memoriza para no reinicializar la BBDD en cada request de la misma instancia.
+// Se memoriza la promesa para no reinicializar la BBDD en cada request.
 const dbReady = initDb();
 app.use((req, res, next) => {
   dbReady.then(() => next(), (err) => {
@@ -657,22 +656,18 @@ app.post('/api/ai/snapshot', async (req, res) => {
 // initAI();
 
 // -------- Cliente estático (build de producción) --------
-// Fuera de Vercel (p. ej. en local o en un host tipo VPS), si existe
-// client/dist el propio servidor sirve la app entera: una sola URL para
-// API + interfaz. En Vercel el cliente lo sirve la plataforma como estático
-// y esta función solo atiende /api/* (ver vercel.json).
-if (!process.env.VERCEL) {
-  const clientDist = path.join(__dirname, '..', 'client', 'dist');
-  if (fs.existsSync(clientDist)) {
-    app.use(express.static(clientDist));
-    app.use((req, res, next) => {
-      if (req.method === 'GET' && !req.path.startsWith('/api') && !path.extname(req.path)) {
-        return res.sendFile(path.join(clientDist, 'index.html'));
-      }
-      next();
-    });
-    console.log('[static] Sirviendo cliente desde client/dist');
-  }
+// Si existe client/dist (p. ej. en Render), el servidor sirve la app entera:
+// una sola URL para API + interfaz, accesible desde el móvil.
+const clientDist = path.join(__dirname, '..', 'client', 'dist');
+if (fs.existsSync(clientDist)) {
+  app.use(express.static(clientDist));
+  app.use((req, res, next) => {
+    if (req.method === 'GET' && !req.path.startsWith('/api') && !path.extname(req.path)) {
+      return res.sendFile(path.join(clientDist, 'index.html'));
+    }
+    next();
+  });
+  console.log('[static] Sirviendo cliente desde client/dist');
 }
 
 function scheduleDailyCache() {
@@ -689,21 +684,13 @@ function scheduleDailyCache() {
   }, ms);
 }
 
-export default app;
-
-// En Vercel no hay proceso persistente: ni app.listen() ni el setTimeout/
-// setInterval de más abajo sobrevivirían entre invocaciones. La copia diaria
-// de reuniones se hace allí con un Vercel Cron Job (ver vercel.json y
-// api/cron/cache-meetings.js).
-if (!process.env.VERCEL) {
-  const PORT = process.env.PORT || 4000;
-  dbReady
-    .then(() => {
-      scheduleDailyCache();
-      app.listen(PORT, () => console.log(`API listening on http://localhost:${PORT}`));
-    })
-    .catch(err => {
-      console.error('[db] Error inicializando la base de datos:', err.message);
-      process.exit(1);
-    });
-}
+const PORT = process.env.PORT || 4000;
+dbReady
+  .then(() => {
+    scheduleDailyCache();
+    app.listen(PORT, () => console.log(`API listening on http://localhost:${PORT}`));
+  })
+  .catch(err => {
+    console.error('[db] Error inicializando la base de datos:', err.message);
+    process.exit(1);
+  });
