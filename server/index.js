@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { dbAll, dbGet, dbRun, initDb, usingPostgres } from './db.js';
 import { getMeetingsInRange, getMeetingsForDate, refreshMeetings } from './outlook.js';
 import { localIso, addDaysIso } from './dates.js';
+import { cacheOutlookMeetings } from './meetingsCache.js';
 // DESACTIVADO (no eliminar): agente IA conectado al modelo gemma (LM Studio)
 // import { initAI, chatWithAI, saveDailySnapshot } from './ai.js';
 
@@ -24,6 +25,16 @@ process.on('unhandledRejection', (reason) => {
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+// En Vercel cada invocación puede ser una instancia nueva: esta promesa se
+// memoriza para no reinicializar la BBDD en cada request de la misma instancia.
+const dbReady = initDb();
+app.use((req, res, next) => {
+  dbReady.then(() => next(), (err) => {
+    console.error('[db] Error inicializando la base de datos:', err.message);
+    res.status(503).json({ error: 'Base de datos no disponible' });
+  });
+});
 
 // Envuelve handlers async: cualquier error acaba en un 500 JSON, no en un crash
 const ah = (fn) => (req, res) => {
@@ -646,40 +657,21 @@ app.post('/api/ai/snapshot', async (req, res) => {
 // initAI();
 
 // -------- Cliente estático (build de producción) --------
-// Si existe client/dist (p. ej. en Render), el servidor sirve la app entera:
-// una sola URL para API + interfaz, accesible desde el móvil.
-const clientDist = path.join(__dirname, '..', 'client', 'dist');
-if (fs.existsSync(clientDist)) {
-  app.use(express.static(clientDist));
-  app.use((req, res, next) => {
-    if (req.method === 'GET' && !req.path.startsWith('/api') && !path.extname(req.path)) {
-      return res.sendFile(path.join(clientDist, 'index.html'));
-    }
-    next();
-  });
-  console.log('[static] Sirviendo cliente desde client/dist');
-}
-
-// -------- Copia diaria de reuniones Outlook a las 20:00 --------
-async function cacheOutlookMeetings() {
-  const today = localIso();
-  // Copiar reuniones de hoy + próximos 30 días
-  const untilIso = addDaysIso(today, 30);
-  try {
-    const meetings = await getMeetingsInRange(today, untilIso);
-    for (const m of meetings) {
-      await dbRun(`
-        INSERT INTO outlook_meetings_cache(uid, date, title, start_time, end_time, all_day, teams_url)
-        VALUES(?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(uid, date) DO UPDATE SET
-          title=excluded.title, start_time=excluded.start_time,
-          end_time=excluded.end_time, all_day=excluded.all_day,
-          teams_url=excluded.teams_url
-      `, m.uid, m.date, m.title, m.startTime, m.endTime, m.allDay ? 1 : 0, m.teamsUrl || null);
-    }
-    console.log(`[cache] ${meetings.length} reuniones de Outlook guardadas (${today} → ${untilIso})`);
-  } catch (err) {
-    console.error('[cache] Error copiando reuniones Outlook:', err.message);
+// Fuera de Vercel (p. ej. en local o en un host tipo VPS), si existe
+// client/dist el propio servidor sirve la app entera: una sola URL para
+// API + interfaz. En Vercel el cliente lo sirve la plataforma como estático
+// y esta función solo atiende /api/* (ver vercel.json).
+if (!process.env.VERCEL) {
+  const clientDist = path.join(__dirname, '..', 'client', 'dist');
+  if (fs.existsSync(clientDist)) {
+    app.use(express.static(clientDist));
+    app.use((req, res, next) => {
+      if (req.method === 'GET' && !req.path.startsWith('/api') && !path.extname(req.path)) {
+        return res.sendFile(path.join(clientDist, 'index.html'));
+      }
+      next();
+    });
+    console.log('[static] Sirviendo cliente desde client/dist');
   }
 }
 
@@ -697,13 +689,21 @@ function scheduleDailyCache() {
   }, ms);
 }
 
-const PORT = process.env.PORT || 4000;
-initDb()
-  .then(() => {
-    scheduleDailyCache();
-    app.listen(PORT, () => console.log(`API listening on http://localhost:${PORT}`));
-  })
-  .catch(err => {
-    console.error('[db] Error inicializando la base de datos:', err.message);
-    process.exit(1);
-  });
+export default app;
+
+// En Vercel no hay proceso persistente: ni app.listen() ni el setTimeout/
+// setInterval de más abajo sobrevivirían entre invocaciones. La copia diaria
+// de reuniones se hace allí con un Vercel Cron Job (ver vercel.json y
+// api/cron/cache-meetings.js).
+if (!process.env.VERCEL) {
+  const PORT = process.env.PORT || 4000;
+  dbReady
+    .then(() => {
+      scheduleDailyCache();
+      app.listen(PORT, () => console.log(`API listening on http://localhost:${PORT}`));
+    })
+    .catch(err => {
+      console.error('[db] Error inicializando la base de datos:', err.message);
+      process.exit(1);
+    });
+}
