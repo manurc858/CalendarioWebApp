@@ -32,7 +32,8 @@ const dbReady = initDb();
 app.use((req, res, next) => {
   dbReady.then(() => next(), (err) => {
     console.error('[db] Error inicializando la base de datos:', err.message);
-    res.status(503).json({ error: 'Base de datos no disponible' });
+    // TODO temporal: quitar el detalle del error una vez diagnosticado el fallo en Vercel
+    res.status(503).json({ error: 'Base de datos no disponible', detail: err.message });
   });
 });
 
