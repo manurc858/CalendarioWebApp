@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 768 768">
+  <defs>
+    <linearGradient id="calendar-gradient" x1="146" y1="114" x2="622" y2="625" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#8064f6" />
+      <stop offset="0.55" stop-color="#8d70f7" />
+      <stop offset="1" stop-color="#7657ee" />
+    </linearGradient>
+  </defs>
+  <rect width="768" height="768" fill="#fafafa" />
+  <path fill="url(#calendar-gradient)" d="M218 167h-20c-28 0-51 23-51 51v357c0 28 23 51 51 51h372c28 0 51-23 51-51V218c0-28-23-51-51-51h-22v31c0 20-15 35-34 35s-34-15-34-35v-31H286v31c0 20-15 35-34 35s-34-15-34-35v-31Zm-55 120h442v288c0 19-16 35-35 35H198c-19 0-35-16-35-35V287Z" />
+  <rect x="234" y="114" width="35" height="103" rx="18" fill="url(#calendar-gradient)" />
+  <rect x="498" y="114" width="35" height="103" rx="18" fill="url(#calendar-gradient)" />
+  <g fill="url(#calendar-gradient)">
+    <rect x="221" y="336" width="43" height="44" rx="9" />
+    <rect x="315" y="336" width="43" height="44" rx="9" />
+    <rect x="409" y="336" width="43" height="44" rx="9" />
+    <rect x="502" y="336" width="43" height="44" rx="9" />
+    <rect x="221" y="424" width="43" height="44" rx="9" />
+    <rect x="315" y="424" width="43" height="44" rx="9" />
+    <rect x="409" y="424" width="43" height="44" rx="9" />
+    <rect x="502" y="424" width="43" height="44" rx="9" />
+    <rect x="221" y="512" width="43" height="44" rx="9" />
+    <rect x="315" y="512" width="43" height="44" rx="9" />
+    <rect x="409" y="512" width="43" height="44" rx="9" />
+    <rect x="502" y="512" width="43" height="44" rx="9" />
+  </g>
+</svg>
