@@ -53,6 +53,9 @@ export const api = {
   carryOverTodo: (id, toDate) => req(`/todos/${id}/carry-over`, { method: 'POST', body: toDate ? { to_date: toDate } : {} }),
   overdueTodos: (before) => req(`/todos/overdue?${new URLSearchParams({ before })}`),
   unassignedTodos: () => req('/todos/unassigned'),
+  addSubtask: (todoId, text) => req(`/todos/${todoId}/subtasks`, { method: 'POST', body: { text } }),
+  updateSubtask: (subtaskId, data) => req(`/todos/subtasks/${subtaskId}`, { method: 'PUT', body: data }),
+  deleteSubtask: (subtaskId) => req(`/todos/subtasks/${subtaskId}`, { method: 'DELETE' }),
 
   // events
   listEvents: (params = {}) => {

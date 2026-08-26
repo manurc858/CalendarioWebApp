@@ -1,13 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api } from '../api.js';
 import DayDetailPanel from './DayDetailPanel.jsx';
 import { iso, LABOR_TYPES, effectiveLabor, calcMeetingHours } from '../utils.js';
 
 // Pantalla "Hoy" del orbe central (móvil): hero con saludo, fecha grande y
 // resumen del día + el detalle editable de siempre debajo.
-export default function TodayScreen({ today, laborMap, projects, onReload, onClose }) {
-  const dialogRef = useRef(null);
-  const restoreFocusRef = useRef(null);
+export default function TodayScreen({ today, laborMap, projects, onReload }) {
   const [stats, setStats] = useState(null);
   const dateIso = iso(today);
 
@@ -23,30 +21,6 @@ export default function TodayScreen({ today, laborMap, projects, onReload, onClo
     }).catch(() => {});
   }, [dateIso]);
 
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    if (!dialog) return;
-
-    restoreFocusRef.current = document.activeElement;
-    if (!dialog.open) dialog.showModal();
-
-    const onCancel = (e) => {
-      e.preventDefault();
-      onClose();
-    };
-
-    dialog.addEventListener('cancel', onCancel);
-
-    return () => {
-      dialog.removeEventListener('cancel', onCancel);
-      if (dialog.open) dialog.close();
-      const toFocus = restoreFocusRef.current;
-      if (toFocus && typeof toFocus.focus === 'function' && document.contains(toFocus)) {
-        requestAnimationFrame(() => toFocus.focus());
-      }
-    };
-  }, [onClose]);
-
   const h = today.getHours();
   const greeting = h < 14 ? 'Buenos días' : h < 21 ? 'Buenas tardes' : 'Buenas noches';
   const eff = effectiveLabor(today, laborMap);
@@ -55,10 +29,9 @@ export default function TodayScreen({ today, laborMap, projects, onReload, onClo
   const monthYear = today.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
 
   return (
-    <dialog ref={dialogRef} className="today-screen-dialog" aria-label="Hoy">
+    <section className="today-screen-layer" aria-label="Hoy">
       <div className="today-screen">
         <header className="today-hero">
-          <button type="button" className="today-close" onClick={onClose} aria-label="Cerrar">✕</button>
           <div className="today-greeting">{greeting}</div>
           <div className="today-date-row">
             <span className="today-big-num">{today.getDate()}</span>
@@ -100,6 +73,6 @@ export default function TodayScreen({ today, laborMap, projects, onReload, onClo
           />
         </div>
       </div>
-    </dialog>
+    </section>
   );
 }

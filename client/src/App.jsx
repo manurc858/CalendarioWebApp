@@ -8,6 +8,7 @@ import WeeklyView from './components/WeeklyView.jsx';
 import MobileNav from './components/MobileNav.jsx';
 import DaySheet from './components/DaySheet.jsx';
 import TodayScreen from './components/TodayScreen.jsx';
+import { FluidTabs } from './components/FluidTabs.jsx';
 import { LABOR_TYPES, LABOR_ORDER } from './utils.js';
 
 const YearView = lazy(() => import('./components/YearView.jsx'));
@@ -20,6 +21,7 @@ export default function App() {
   const [cursor, setCursor] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
   const [selectedDay, setSelectedDay] = useState(iso(today));
   const [view, setView] = useState('weekly'); // 'weekly' | 'monthly' | 'annual' | 'projects'
+  const [calendarTab, setCalendarTab] = useState('weekly'); // última sub-vista de calendario activa
   const [activeType, setActiveType] = useState('vacaciones');
   const [sidebarOpen, setSidebarOpen] = useState(true);
   // DESACTIVADO (no eliminar): estado del PixelAgent (agente IA gemma)
@@ -43,6 +45,8 @@ export default function App() {
       setProjects([]);
     }
   }, []);
+  // proyectos hibernados no deben ofrecerse al registrar horas/reuniones
+  const activeProjects = useMemo(() => projects.filter(p => p.is_active !== 0), [projects]);
   const reloadSettings = useCallback(async () => {
     try {
       const s = await api.getSettings();
@@ -83,7 +87,18 @@ export default function App() {
       const ensure = (date) => (map[date] ||= { work: [], events: [], todos: [], meetings: [] });
       (work || []).forEach(w => { if (w && w.date) ensure(w.date).work.push(w); });
       (events || []).forEach(e => { if (e && e.date) ensure(e.date).events.push(e); });
-      (todos || []).forEach(t => { if (t && t.date) ensure(t.date).todos.push(t); });
+      // Expand multi-day tasks across every day in their range
+      (todos || []).forEach(t => {
+        if (!t || !t.date) return;
+        const end = t.end_date || t.date;
+        let cur = t.date;
+        while (cur <= end && cur <= to) {
+          ensure(cur).todos.push({ ...t, _displayDate: cur });
+          if (cur >= to) break;
+          const d = new Date(cur + 'T00:00:00'); d.setDate(d.getDate() + 1);
+          cur = iso(d);
+        }
+      });
       (meetings || []).forEach(mt => { if (mt && mt.date) ensure(mt.date).meetings.push(mt); });
       setMonthWorkEntries(Array.isArray(work) ? work : []);
       setDaySummaries(map);
@@ -230,7 +245,53 @@ export default function App() {
     run();
   }, [cursor, monthWorkEntries]);
 
-  const viewOrder = ['weekly', 'monthly', 'annual', 'projects'];
+  const handleCalendarTabChange = (id) => {
+    setView(id);
+    setCalendarTab(id);
+  };
+
+  const handleMobileViewChange = (id) => {
+    setTodayOpen(false);
+    setView(id === 'monthly' ? calendarTab : id);
+  };
+
+  const calendarTabs = [
+    {
+      id: 'weekly',
+      label: 'Semana',
+      icon: (
+        <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <path d="M3 5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5Zm0 4h14M7 3v4m6-4v4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      ),
+    },
+    {
+      id: 'monthly',
+      label: 'Mes',
+      icon: (
+        <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <path d="M3 5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5Zm0 4h14M7 3v4m6-4v4M6.5 12h1m3 0h1m3 0h1M6.5 14.5h1m3 0h1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      ),
+    },
+    {
+      id: 'annual',
+      label: 'Año',
+      icon: (
+        <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <rect x="3" y="4" width="14" height="13" rx="2" stroke="currentColor" strokeWidth="1.5" />
+          <path d="M3 8h14M7 4V2.5m6 1.5V2.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+          <circle cx="7" cy="11.5" r="0.75" fill="currentColor" />
+          <circle cx="10" cy="11.5" r="0.75" fill="currentColor" />
+          <circle cx="13" cy="11.5" r="0.75" fill="currentColor" />
+          <circle cx="7" cy="14" r="0.75" fill="currentColor" />
+          <circle cx="10" cy="14" r="0.75" fill="currentColor" />
+        </svg>
+      ),
+    },
+  ];
+
+  const viewOrder = ['calendar', 'projects'];
   const handleViewTabKeyDown = (e, currentView) => {
     const currentIndex = viewOrder.indexOf(currentView);
     if (currentIndex === -1) return;
@@ -250,7 +311,11 @@ export default function App() {
 
     e.preventDefault();
     const nextView = viewOrder[nextIndex];
-    setView(nextView);
+    if (nextView === 'calendar') {
+      setView(calendarTab);
+    } else {
+      setView(nextView);
+    }
     requestAnimationFrame(() => {
       document.getElementById(`view-tab-${nextView}`)?.focus();
     });
@@ -277,55 +342,19 @@ export default function App() {
 
             <div className="side-tabs" role="tablist" aria-label="Vistas de agenda" aria-orientation="vertical">
               <button
-                id="view-tab-weekly"
+                id="view-tab-calendar"
                 role="tab"
-                aria-selected={view === 'weekly'}
-                aria-controls="view-panel-weekly"
-                tabIndex={view === 'weekly' ? 0 : -1}
-                className={`side-tab ${view === 'weekly' ? 'active' : ''}`}
-                onClick={() => setView('weekly')}
-                onKeyDown={(e) => handleViewTabKeyDown(e, 'weekly')}
+                aria-selected={view !== 'projects'}
+                aria-controls="view-panel-calendar"
+                tabIndex={view !== 'projects' ? 0 : -1}
+                className={`side-tab ${view !== 'projects' ? 'active' : ''}`}
+                onClick={() => setView(calendarTab)}
+                onKeyDown={(e) => handleViewTabKeyDown(e, 'calendar')}
               >
                 <svg className="side-tab-icon" aria-hidden="true" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
                   <path d="M3 5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5Zm0 4h14M7 3v4m6-4v4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
-                <span>Semanal</span>
-              </button>
-              <button
-                id="view-tab-monthly"
-                role="tab"
-                aria-selected={view === 'monthly'}
-                aria-controls="view-panel-monthly"
-                tabIndex={view === 'monthly' ? 0 : -1}
-                className={`side-tab ${view === 'monthly' ? 'active' : ''}`}
-                onClick={() => setView('monthly')}
-                onKeyDown={(e) => handleViewTabKeyDown(e, 'monthly')}
-              >
-                <svg className="side-tab-icon" aria-hidden="true" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M3 5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5Zm0 4h14M7 3v4m6-4v4M6.5 12h1m3 0h1m3 0h1M6.5 14.5h1m3 0h1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-                <span>Mensual</span>
-              </button>
-              <button
-                id="view-tab-annual"
-                role="tab"
-                aria-selected={view === 'annual'}
-                aria-controls="view-panel-annual"
-                tabIndex={view === 'annual' ? 0 : -1}
-                className={`side-tab ${view === 'annual' ? 'active' : ''}`}
-                onClick={() => setView('annual')}
-                onKeyDown={(e) => handleViewTabKeyDown(e, 'annual')}
-              >
-                <svg className="side-tab-icon" aria-hidden="true" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <rect x="3" y="4" width="14" height="13" rx="2" stroke="currentColor" strokeWidth="1.5" />
-                  <path d="M3 8h14M7 4V2.5m6 1.5V2.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                  <circle cx="7" cy="11.5" r="0.75" fill="currentColor" />
-                  <circle cx="10" cy="11.5" r="0.75" fill="currentColor" />
-                  <circle cx="13" cy="11.5" r="0.75" fill="currentColor" />
-                  <circle cx="7" cy="14" r="0.75" fill="currentColor" />
-                  <circle cx="10" cy="14" r="0.75" fill="currentColor" />
-                </svg>
-                <span>Anual</span>
+                <span>Calendario</span>
               </button>
               <button
                 id="view-tab-projects"
@@ -344,7 +373,7 @@ export default function App() {
               </button>
             </div>
 
-            {/* Sidebar content per view */}
+            {/* Sidebar content per calendar sub-view */}
             {view === 'monthly' && (
               <LaborSidebar />
             )}
@@ -399,21 +428,35 @@ export default function App() {
       </aside>
 
       <main className="main">
-        {/* ---- Weekly View ---- */}
-        {view === 'weekly' && (
-          <section id="view-panel-weekly" role="tabpanel" aria-labelledby="view-tab-weekly">
-            <WeeklyView
-              today={today}
-              onReload={reloadMonth}
-              laborMap={laborMap}
-              resetSignal={todayTick}
-            />
-          </section>
-        )}
+        {/* ---- Calendar panel (FluidTabs + sub-views) ---- */}
+        {view !== 'projects' && (
+          <section
+            className="calendar-panel"
+            id="view-panel-calendar"
+            role="tabpanel"
+            aria-labelledby="view-tab-calendar"
+          >
+            <div className="calendar-view-tabs">
+              <FluidTabs
+                tabs={calendarTabs}
+                active={calendarTab}
+                onChange={handleCalendarTabChange}
+              />
+            </div>
 
-        {/* ---- Monthly View ---- */}
-        {view === 'monthly' && (
-          <section id="view-panel-monthly" role="tabpanel" aria-labelledby="view-tab-monthly">
+            {/* Weekly */}
+            {view === 'weekly' && (
+              <WeeklyView
+                today={today}
+                onReload={reloadMonth}
+                laborMap={laborMap}
+                resetSignal={todayTick}
+              />
+            )}
+
+            {/* Monthly */}
+            {view === 'monthly' && (
+              <section aria-label="Vista mensual">
             <section className="toolbar">
               <div className="month-nav">
                 <button className="btn btn-icon" onClick={prevMonth} aria-label="Anterior">‹</button>
@@ -476,7 +519,7 @@ export default function App() {
                   key={selectedDay}
                   date={selectedDay}
                   laborMap={laborMap}
-                  projects={projects}
+                  projects={activeProjects}
                   onReload={reloadMonth}
                 />
               </div>
@@ -484,9 +527,9 @@ export default function App() {
           </section>
         )}
 
-        {/* ---- Annual View ---- */}
-        {view === 'annual' && (
-          <section id="view-panel-annual" role="tabpanel" aria-labelledby="view-tab-annual">
+            {/* Annual */}
+            {view === 'annual' && (
+              <section aria-label="Vista anual">
             <section className="toolbar">
               <div className="month-nav">
                 <button className="btn btn-icon" onClick={() => setCursor(new Date(cursor.getFullYear() - 1, 0, 1))} aria-label="Año anterior">‹</button>
@@ -528,14 +571,17 @@ export default function App() {
                 onChange={handleLaborChange}
                 onJump={(d) => { jumpToMonth(d); setView('monthly'); }}
                 onDayPeek={(d) => setDaySheet(d)}
+                onReload={reloadMonth}
               />
             </Suspense>
+              </section>
+            )}
           </section>
         )}
 
         {/* ---- Projects View ---- */}
         {view === 'projects' && (
-          <section id="view-panel-projects" role="tabpanel" aria-labelledby="view-tab-projects">
+          <section id="view-panel-projects" role="tabpanel" aria-labelledby="view-tab-projects" aria-label="Vista de proyectos">
             <section className="toolbar">
               <div className="month-nav">
                 <button className="btn btn-icon" onClick={prevMonth} aria-label="Anterior">‹</button>
@@ -564,23 +610,22 @@ export default function App() {
           </section>
         )}
       </main>
-      <MobileNav view={view} onChangeView={setView} onToday={handleGoToday} todayDate={today} />
+      <MobileNav view={todayOpen ? 'today' : view} onChangeView={handleMobileViewChange} onToday={handleGoToday} todayDate={today} />
       {daySheet && (
         <DaySheet
           date={daySheet}
           laborMap={laborMap}
-          projects={projects}
+          projects={activeProjects}
           onReload={reloadMonth}
-          onClose={() => { setDaySheet(null); setView('weekly'); }}
+          onClose={() => { setDaySheet(null); handleCalendarTabChange('weekly'); }}
         />
       )}
       {todayOpen && (
         <TodayScreen
           today={today}
           laborMap={laborMap}
-          projects={projects}
+          projects={activeProjects}
           onReload={reloadMonth}
-          onClose={() => setTodayOpen(false)}
         />
       )}
       {/* DESACTIVADO (no eliminar): PixelAgent (agente IA gemma)

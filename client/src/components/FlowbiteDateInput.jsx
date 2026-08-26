@@ -20,6 +20,7 @@ export default function FlowbiteDateInput({
   name,
   required = false,
   title,
+  min,
   placeholder = 'Selecciona fecha',
   disabled = false,
   autoFocus = false,
@@ -43,6 +44,7 @@ export default function FlowbiteDateInput({
     const picker = new Datepicker(inputEl, {
       autohide: true,
       format: 'yyyy-mm-dd',
+      minDate: min || undefined,
       todayBtn: false,
       clearBtn: false,
       orientation: 'bottom left',
@@ -154,6 +156,7 @@ export default function FlowbiteDateInput({
         className={`fb-date-input ${className}`.trim()}
         placeholder={placeholder}
         required={required}
+        min={min}
         title={title}
         disabled={disabled}
         autoFocus={autoFocus}

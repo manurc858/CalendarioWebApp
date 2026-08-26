@@ -92,6 +92,8 @@
   margin-top: 4px;
   max-height: 260px;
   overflow: auto;
+  z-index: 9999 !important;
+  position: relative;
 }
 .fb-dropdown-menu.hidden {
   display: none !important;
@@ -157,6 +159,11 @@
 }
 .proj-mini-bar-fill { height: 100%; border-radius: 999px; }
 .proj-list-item--unassigned { background: #fbfaf8; }
+.proj-list-item.is-hibernated {
+  background: #f4f4f5; opacity: .62; filter: grayscale(.6);
+}
+.proj-list-item.is-hibernated:hover { transform: none; }
+.proj-list-item.is-hibernated .proj-list-name { color: var(--muted); }
 
 /* Other projects chips */
 .proj-other-section {
@@ -240,6 +247,7 @@
 .proj-status-pill.is-warning { background: #fffbeb; color: #a16207; border-color: #fde68a; }
 .proj-status-pill.is-overload { background: #fef2f2; color: #b91c1c; border-color: #fecaca; }
 .proj-status-pill.is-inactive { background: #f4f4f5; color: #52525b; border-color: #d4d4d8; }
+.proj-status-pill.is-hibernated { background: #e4e4e7; color: #71717a; border-color: #d4d4d8; }
 .proj-overview-title {
   font-size: 15px; font-weight: 700; margin-bottom: 4px;
 }
@@ -300,7 +308,19 @@
 }
 .proj-exp-btn:hover { color: var(--fg); }
 .proj-exp-input { width: 50px; height: 24px; font-size: 13px; text-align: center; }
-.proj-del-btn { margin-left: auto; }
+.proj-detail-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.proj-hibernate-switch {
+  position: relative; width: 36px; height: 20px; padding: 2px; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--line-2); cursor: pointer; flex: 0 0 auto;
+  transition: background .15s, border-color .15s;
+}
+.proj-hibernate-switch:not(.is-hibernated) { background: var(--accent); border-color: var(--accent); }
+.proj-hibernate-knob {
+  display: block; width: 14px; height: 14px; border-radius: 50%; background: #fff;
+  box-shadow: 0 1px 2px rgba(0,0,0,.25); transform: translateX(0); transition: transform .15s;
+}
+.proj-hibernate-switch:not(.is-hibernated) .proj-hibernate-knob { transform: translateX(16px); }
+.proj-hibernate-label { font-size: 12px; font-weight: 700; color: var(--muted); }
 
 /* Progress bar */
 .proj-progress-bar {

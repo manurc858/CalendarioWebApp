@@ -18,4 +18,6 @@
 @import './styles/pixel-agent.css';
 @import './styles/a11y.css';
 @import './styles/offline-banner.css';
+@import './styles/fluid-tabs.css';
+@import './styles/task-widget.css';
 @import './styles/mobile.css';

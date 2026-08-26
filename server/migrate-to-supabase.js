@@ -32,7 +32,8 @@ await initDb();
 const TABLES = [
   ['projects',               ['id', 'name', 'color', 'expected_hours', 'description', 'links', 'created_at'], true],
   ['work_entries',           ['id', 'date', 'start_time', 'end_time', 'hours', 'project_id', 'note'], true],
-  ['todos',                  ['id', 'date', 'text', 'done', 'sort_order', 'parent_id'], true],
+  ['todos',                  ['id', 'date', 'text', 'done', 'sort_order', 'parent_id', 'end_date', 'extended', 'priority', 'status'], true],
+  ['todo_subtasks',          ['id', 'todo_id', 'text', 'done', 'sort_order', 'created_at'], true],
   ['events',                 ['id', 'date', 'title', 'kind'], true],
   ['labor_days',             ['date', 'type', 'label'], false],
   ['settings',               ['key', 'value'], false],

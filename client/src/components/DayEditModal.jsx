@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { api } from '../api.js';
 import { diffMinutes, fmtHours, LABOR_TYPES, effectiveLabor } from '../utils.js';
 import FlowbiteDropdown from './FlowbiteDropdown.jsx';
+import TaskLabel from './TaskLabel.jsx';
 
 const DEFAULT_SLOTS = [
   { start_time: '07:45', end_time: '13:30' },
@@ -219,10 +220,10 @@ export default function DayEditModal({ date, onClose, projects, laborMap }) {
             <ul className="list">
               {data.todos.map(t => (
                 <li key={t.id} className="list-item">
-                  <input type="checkbox" checked={!!t.done}
+                  <input type="checkbox" className="task-main-check" checked={!!t.done}
                          onChange={async e => { await api.updateTodo(t.id, { done: e.target.checked ? 1 : 0 }); reload(); }} />
                   <div className="li-main">
-                    <span className={t.done ? 'done' : ''}>{t.text}</span>
+                    <TaskLabel todo={t} onChanged={reload} />
                   </div>
                   <button type="button" className="btn btn-link danger" onClick={async () => { await api.deleteTodo(t.id); reload(); }}>Eliminar</button>
                 </li>

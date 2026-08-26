@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { X } from 'lucide-react';
 import DayDetailPanel from './DayDetailPanel.jsx';
 
 // Bottom sheet móvil con el detalle completo (editable) de un día.
@@ -42,7 +43,9 @@ export default function DaySheet({ date, laborMap, projects, onReload, onClose }
     <dialog ref={dialogRef} className="mn-editor-dialog day-sheet-dialog" aria-label="Detalle del día">
       <div className="mn-editor day-sheet">
         <div className="day-sheet-header">
-          <button type="button" className="day-sheet-close" onClick={onClose} aria-label="Cerrar detalle del día">✕</button>
+          <button type="button" className="day-sheet-close" onClick={onClose} aria-label="Cerrar detalle del día">
+            <X size={18} aria-hidden="true" />
+          </button>
         </div>
         <div className="day-sheet-body">
           <DayDetailPanel

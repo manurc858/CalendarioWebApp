@@ -6,8 +6,14 @@ import FlowbiteDateInput from './FlowbiteDateInput.jsx';
 export default function CreateTaskModal({ initialDate, onClose, onCreated }) {
   const dialogRef = useRef(null);
   const restoreFocusRef = useRef(null);
+  const onCloseRef = useRef(onClose);
   const [date, setDate] = useState(initialDate || '');
   const [text, setText] = useState('');
+  const [extended, setExtended] = useState(false);
+  const [endDate, setEndDate] = useState(initialDate || '');
+  const [priority, setPriority] = useState('normal');
+
+  useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -16,9 +22,12 @@ export default function CreateTaskModal({ initialDate, onClose, onCreated }) {
     await api.createTodo({
       date: date || null,
       text: text.trim(),
+      extended,
+      end_date: extended ? (endDate || date || null) : null,
+      priority: extended ? priority : 'normal',
     });
     onCreated?.();
-    onClose();
+    onCloseRef.current();
   };
 
   useEffect(() => {
@@ -28,14 +37,8 @@ export default function CreateTaskModal({ initialDate, onClose, onCreated }) {
     restoreFocusRef.current = document.activeElement;
     if (!dialog.open) dialog.showModal();
 
-    const onCancel = (e) => {
-      e.preventDefault();
-      onClose();
-    };
-
-    const onBackdropClick = (e) => {
-      if (e.target === dialog) onClose();
-    };
+    const onCancel = (e) => { e.preventDefault(); onCloseRef.current(); };
+    const onBackdropClick = (e) => { if (e.target === dialog) onCloseRef.current(); };
 
     dialog.addEventListener('cancel', onCancel);
     dialog.addEventListener('click', onBackdropClick);
@@ -49,7 +52,8 @@ export default function CreateTaskModal({ initialDate, onClose, onCreated }) {
         requestAnimationFrame(() => toFocus.focus());
       }
     };
-  }, [onClose]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <dialog ref={dialogRef} className="mn-editor-dialog" aria-labelledby="create-task-dialog-title">
@@ -81,6 +85,32 @@ export default function CreateTaskModal({ initialDate, onClose, onCreated }) {
               placeholder="Selecciona fecha"
             />
           </div>
+          <label className="cm-more-toggle">
+            <span>Más información</span>
+            <input type="checkbox" checked={extended} onChange={e => setExtended(e.target.checked)} />
+          </label>
+          {extended ? (
+            <>
+              <div className="cm-field">
+                <label htmlFor="create-task-end">Fecha final</label>
+                <FlowbiteDateInput
+                  id="create-task-end"
+                  value={endDate}
+                  onValueChange={setEndDate}
+                  min={date || undefined}
+                  required
+                  placeholder="Selecciona fecha"
+                />
+              </div>
+              <div className="cm-field">
+                <label htmlFor="create-task-priority">Prioridad</label>
+                <select id="create-task-priority" value={priority} onChange={e => setPriority(e.target.value)}>
+                  <option value="normal">Normal</option>
+                  <option value="urgent">Urgente</option>
+                </select>
+              </div>
+            </>
+          ) : null}
           <div className="mn-editor-foot">
             <button type="button" className="btn btn-ghost" onClick={onClose}>Cancelar</button>
             <button type="submit" className="btn btn-primary" disabled={!text.trim()}>Crear</button>

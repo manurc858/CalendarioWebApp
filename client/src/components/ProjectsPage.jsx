@@ -70,6 +70,11 @@ export default function ProjectsPage({ projects, stats, cursor, laborMap, reload
     loadMonthWork();
   };
 
+  const toggleHibernate = async (id, isActive) => {
+    await api.updateProject(id, { is_active: isActive ? 0 : 1 });
+    reload();
+  };
+
   const unassignedWork = monthWork.filter(w => !w.project_id);
 
   const projectInsights = useMemo(() => {
@@ -174,6 +179,10 @@ export default function ProjectsPage({ projects, stats, cursor, laborMap, reload
     const sorted = [...projectInsights];
 
     sorted.sort((a, b) => {
+      // los proyectos hibernados siempre van al final, sea cual sea el orden elegido
+      const hibernatedDiff = (a.is_active === 0 ? 1 : 0) - (b.is_active === 0 ? 1 : 0);
+      if (hibernatedDiff !== 0) return hibernatedDiff;
+
       if (sortMode === 'hours') {
         return b.workedHours - a.workedHours || a.name.localeCompare(b.name, 'es');
       }
@@ -338,19 +347,24 @@ export default function ProjectsPage({ projects, stats, cursor, laborMap, reload
           ) : (
             visibleProjects.map(project => {
               const isActive = selected === project.id;
+              const isHibernated = project.is_active === 0;
               const percentLabel = project.expectedHours > 0 ? `${project.progressPct.toFixed(0)}%` : '—';
 
               return (
                 <button
                   key={project.id}
-                  className={`proj-list-item ${isActive ? 'active' : ''}`}
+                  className={`proj-list-item ${isActive ? 'active' : ''} ${isHibernated ? 'is-hibernated' : ''}`}
                   onClick={() => setSelected(isActive ? null : project.id)}
                 >
                   <span className="proj-card-dot" style={{ background: project.color }} />
                   <span className="proj-list-main">
                     <span className="proj-list-topline">
                       <span className="proj-list-name">{project.name}</span>
-                      <span className={`proj-status-pill is-${project.statusKey}`}>{project.statusLabel}</span>
+                      {isHibernated ? (
+                        <span className="proj-status-pill is-hibernated">Hibernado</span>
+                      ) : (
+                        <span className={`proj-status-pill is-${project.statusKey}`}>{project.statusLabel}</span>
+                      )}
                     </span>
                     <span className="proj-list-meta">
                       <span className="proj-list-hours">{project.workedHours.toFixed(1)}h</span>
@@ -548,7 +562,22 @@ export default function ProjectsPage({ projects, stats, cursor, laborMap, reload
                     </div>
                   </div>
                   {selected !== 'none' && (
-                    <button className="btn-delete proj-del-btn" onClick={() => del(selected, selectedProject?.name)} title="Eliminar proyecto">✕</button>
+                    <div className="proj-detail-actions">
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={selectedProject?.is_active !== 0}
+                        className={`proj-hibernate-switch ${selectedProject?.is_active === 0 ? 'is-hibernated' : ''}`}
+                        onClick={() => toggleHibernate(selected, selectedProject?.is_active !== 0)}
+                        title={selectedProject?.is_active === 0 ? 'Reactivar proyecto' : 'Hibernar proyecto'}
+                      >
+                        <span className="proj-hibernate-knob" />
+                      </button>
+                      <span className="proj-hibernate-label">
+                        {selectedProject?.is_active === 0 ? 'Hibernado' : 'Activo'}
+                      </span>
+                      <button className="btn-delete proj-del-btn" onClick={() => del(selected, selectedProject?.name)} title="Eliminar proyecto">✕</button>
+                    </div>
                   )}
                 </div>
 

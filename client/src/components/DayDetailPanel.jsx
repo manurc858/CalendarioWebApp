@@ -1,9 +1,11 @@
 import { useEffect, useState, useRef } from 'react';
+import { ChevronRight, Clock3, Pencil, Plus, X } from 'lucide-react';
 import { api } from '../api.js';
 import { fmtHours, LABOR_TYPES, effectiveLabor, calcMeetingHours, iso, addDays } from '../utils.js';
 import MeetingNotesEditor from './MeetingNotesEditor.jsx';
 import CreateMeetingModal from './CreateMeetingModal.jsx';
 import FlowbiteDropdown from './FlowbiteDropdown.jsx';
+import TaskLabel from './TaskLabel.jsx';
 
 function insertTodoAt(todos, draggedId, beforeId = null) {
   const dragged = todos.find(todo => todo.id === draggedId);
@@ -226,13 +228,13 @@ export default function DayDetailPanel({ date, laborMap, projects, onReload }) {
       <div className="day-detail-body">
         {/* ---- Work hours ---- */}
         <section className="day-section">
-          <h4 className="day-section-title">⏱ Horas de trabajo</h4>
+          <h4 className="day-section-title work-section-title"><Clock3 size={14} /> Horas de trabajo</h4>
           {data.work.length > 0 && (
             <ul className="day-entries">
               {data.work.map(w => (
                 <li
                   key={w.id}
-                  className={`day-entry ${openWorkNotes[w.id] ? 'note-open' : ''}`}
+                  className={`day-entry work-entry-card ${openWorkNotes[w.id] ? 'note-open' : ''}`}
                   onDragOver={e => {
                     e.preventDefault();
                     e.currentTarget.classList.add('drag-over');
@@ -291,7 +293,7 @@ export default function DayDetailPanel({ date, laborMap, projects, onReload }) {
                       </div>
                     ) : (
                       <>
-                        <div className="day-entry-time">{(w.hours || 0).toFixed(2)}h</div>
+                        <div className="day-entry-time"><span>{(w.hours || 0).toFixed(2)}</span><small>h</small></div>
                         <div className="day-entry-project">{w.project_name || 'Sin proyecto'}</div>
                       </>
                     )}
@@ -304,7 +306,7 @@ export default function DayDetailPanel({ date, laborMap, projects, onReload }) {
                       </>
                     ) : (
                       <>
-                        <button className="btn-edit" onClick={() => startEditWork(w)} title="Editar">✎</button>
+                        <button type="button" className="btn-edit" onClick={() => startEditWork(w)} title="Editar" aria-label="Editar horas"><Pencil size={13} /></button>
                         {w.note && (
                           <button
                             type="button"
@@ -312,9 +314,10 @@ export default function DayDetailPanel({ date, laborMap, projects, onReload }) {
                             onClick={() => toggleWorkNote(w.id)}
                             aria-expanded={!!openWorkNotes[w.id]}
                             title="Ver nota"
-                          >▶</button>
+                            aria-label={openWorkNotes[w.id] ? 'Ocultar nota' : 'Ver nota'}
+                          ><ChevronRight size={13} /></button>
                         )}
-                        <button className="btn-delete" onClick={() => deleteWork(w.id)} title="Eliminar">✕</button>
+                        <button type="button" className="btn-delete" onClick={() => deleteWork(w.id)} title="Eliminar" aria-label="Eliminar horas"><X size={14} /></button>
                       </>
                     )}
                   </div>
@@ -362,15 +365,20 @@ export default function DayDetailPanel({ date, laborMap, projects, onReload }) {
           )}
           <form className="work-add-form" onSubmit={addWork}>
             <div className="work-add-row">
-              <input
-                type="number" step="0.25" min="0" max="24"
-                placeholder="Horas"
-                value={newHours}
-                onChange={e => setNewHours(e.target.value)}
-                className="inline-input hours-input"
-              />
+              <div className="work-hours-field">
+                <Clock3 size={14} aria-hidden="true" />
+                <input
+                  type="number" step="0.25" min="0" max="24"
+                  placeholder="0.00"
+                  aria-label="Horas trabajadas"
+                  value={newHours}
+                  onChange={e => setNewHours(e.target.value)}
+                  className="inline-input hours-input"
+                />
+                <span>h</span>
+              </div>
               <FlowbiteDropdown
-                className="inline-select"
+                className="inline-select work-project-select"
                 value={newProjectId}
                 onChange={setNewProjectId}
                 options={[
@@ -379,11 +387,12 @@ export default function DayDetailPanel({ date, laborMap, projects, onReload }) {
                 ]}
                 ariaLabel="Proyecto"
               />
-              <button type="submit" className="btn-add" disabled={!newHours}>+</button>
+              <button type="submit" className="btn-add work-add-submit" disabled={!newHours} title="Añadir horas" aria-label="Añadir horas"><Plus size={17} /></button>
             </div>
             <textarea
               ref={noteTextareaRef}
-              placeholder="Notas (opcional) - arrastra aquí tareas"
+              placeholder="Notas (opcional) · arrastra aquí tareas"
+              aria-label="Notas de las horas trabajadas"
               value={newNote}
               onChange={e => setNewNote(e.target.value)}
               onDragOver={e => {
@@ -473,20 +482,7 @@ export default function DayDetailPanel({ date, laborMap, projects, onReload }) {
                         onReload?.();
                       }}
                       className="day-todo-check" />
-                    <span className={`todo-text ${t.done ? 'done' : ''}`}>
-                     {t.text}
-                    </span>
-                    <button
-                     className="btn-carry-over"
-                     title="Pasar al día siguiente"
-                     onClick={async () => {
-                       const nextDay = iso(addDays(new Date(date + 'T00:00:00'), 1));
-                       await api.carryOverTodo(t.id, nextDay);
-                       reload();
-                       onReload?.();
-                     }}
-                    >⏭</button>
-                    <button className="btn-delete" onClick={() => deleteTodo(t.id)} title="Eliminar">✕</button>
+                    <TaskLabel todo={t} onChanged={() => { reload(); onReload?.(); }} />
                   </div>
                 </li>
               ))}

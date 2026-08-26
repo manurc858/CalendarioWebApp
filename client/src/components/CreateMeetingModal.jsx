@@ -6,6 +6,7 @@ export default function CreateMeetingModal({ initialDate, onClose, onCreated }) 
   const dialogRef = useRef(null);
   const restoreFocusRef = useRef(null);
   const endTimeRef = useRef(null);
+  const onCloseRef = useRef(onClose);
   const [date, setDate] = useState(initialDate || '');
   const [title, setTitle] = useState('');
   const [startTime, setStartTime] = useState('');
@@ -13,6 +14,8 @@ export default function CreateMeetingModal({ initialDate, onClose, onCreated }) 
   const [allDay, setAllDay] = useState(false);
   const [repeatWeekly, setRepeatWeekly] = useState(false);
   const [repeatUntil, setRepeatUntil] = useState('');
+
+  useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
 
   useEffect(() => {
     const endInput = endTimeRef.current;
@@ -40,7 +43,7 @@ export default function CreateMeetingModal({ initialDate, onClose, onCreated }) 
       repeat_until: repeatWeekly ? (repeatUntil || null) : null,
     });
     onCreated?.();
-    onClose();
+    onCloseRef.current();
   };
 
   useEffect(() => {
@@ -50,14 +53,8 @@ export default function CreateMeetingModal({ initialDate, onClose, onCreated }) 
     restoreFocusRef.current = document.activeElement;
     if (!dialog.open) dialog.showModal();
 
-    const onCancel = (e) => {
-      e.preventDefault();
-      onClose();
-    };
-
-    const onBackdropClick = (e) => {
-      if (e.target === dialog) onClose();
-    };
+    const onCancel = (e) => { e.preventDefault(); onCloseRef.current(); };
+    const onBackdropClick = (e) => { if (e.target === dialog) onCloseRef.current(); };
 
     dialog.addEventListener('cancel', onCancel);
     dialog.addEventListener('click', onBackdropClick);
@@ -71,14 +68,15 @@ export default function CreateMeetingModal({ initialDate, onClose, onCreated }) 
         requestAnimationFrame(() => toFocus.focus());
       }
     };
-  }, [onClose]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <dialog ref={dialogRef} className="mn-editor-dialog" aria-labelledby="create-meeting-dialog-title">
       <div className="mn-editor mn-editor-sm">
         <div className="mn-editor-head">
           <h3 id="create-meeting-dialog-title">📅 Nueva reunión</h3>
-          <button type="button" className="btn btn-icon" onClick={onClose} aria-label="Cerrar modal">✕</button>
+          <button type="button" className="btn btn-icon" onClick={() => onCloseRef.current()} aria-label="Cerrar modal">✕</button>
         </div>
         <form onSubmit={handleSubmit} className="cm-form">
           <div className="cm-field">

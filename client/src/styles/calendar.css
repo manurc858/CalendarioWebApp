@@ -24,6 +24,7 @@
 }
 .cal-cell {
   aspect-ratio: 1 / 1;
+  container-type: inline-size;
   width: 100%;
   height: 0;
   padding-bottom: 100%;
@@ -98,27 +99,72 @@
   line-height: 1.25;
 }
 .cal-icons {
-  display: flex; gap: 2px; justify-content: center; align-items: center;
-  line-height: 1; margin-bottom: 1px;
+  display: flex; gap: 3px; justify-content: center; align-items: center;
+  max-width: calc(100% - 4px);
+  line-height: 1;
 }
 .cal-icon {
-  display: flex; align-items: center; justify-content: center;
-  width: 18px; height: 18px; border-radius: 5px;
-  font-size: 10px;
-  background: rgba(255,255,255,.7);
-  box-shadow: 0 1px 3px rgba(0,0,0,.1);
+  display: inline-flex; align-items: center; justify-content: center; gap: 2px;
+  min-width: 22px; height: 18px; padding: 0 4px; border-radius: 5px;
+  font-size: 8px; font-weight: 800; white-space: nowrap;
+  background: rgba(255,255,255,.82);
+  border: 1px solid rgba(15,23,42,.08);
+  box-shadow: 0 1px 3px rgba(0,0,0,.08);
 }
-.cal-icon.no-work {
-  background: #fecaca;
-  box-shadow: 0 1px 4px rgba(211,47,47,.25);
-  filter: grayscale(100%) brightness(40%) sepia(100%) hue-rotate(-30deg) saturate(600%);
+.cal-icon svg {
+  width: 11px; height: 11px;
+  flex: 0 0 auto;
+  stroke-width: 2.2;
 }
-.cal-icon.meeting {
-  background: #e0e7ff;
+.cal-icon-hours {
+  color: #1d4ed8;
+  background: #eff6ff;
+  border-color: #bfdbfe;
 }
-.cal-total {
-  font-size: 8px; font-weight: 700; color: var(--accent);
-  line-height: 1;
+.cal-icon-missing {
+  color: #b91c1c;
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+.cal-icon-todo {
+  color: #047857;
+  background: #ecfdf5;
+  border-color: #a7f3d0;
+}
+.cal-icon-event {
+  color: #b45309;
+  background: #fffbeb;
+  border-color: #fde68a;
+}
+.cal-icon-meeting {
+  color: #6d28d9;
+  background: #f5f3ff;
+  border-color: #ddd6fe;
+}
+
+@container (max-width: 110px) {
+  .cal-icons {
+    width: 44px;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1px;
+  }
+  .cal-icon {
+    min-width: 0;
+    width: 100%;
+    height: 12px;
+    padding: 0;
+    border-radius: 3px;
+    font-size: 7px;
+    box-shadow: none;
+  }
+  .cal-icon svg { width: 8px; height: 8px; }
+  .cal-icon-hours,
+  .cal-icon-missing {
+    grid-column: 1 / -1;
+    gap: 2px;
+  }
+  .cal-icon-count { display: none; }
 }
 
 /* Drop highlight on calendar cells */

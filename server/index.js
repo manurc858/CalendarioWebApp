@@ -85,15 +85,16 @@ app.post('/api/projects', ah(async (req, res) => {
   res.json({ id: info.lastInsertRowid, name, color: color || '#4f8cff', expected_hours: Number(expected_hours) || 0, description: description || '', links: links || '' });
 }));
 app.put('/api/projects/:id', ah(async (req, res) => {
-  const { name, color, expected_hours, description, links } = req.body;
+  const { name, color, expected_hours, description, links, is_active } = req.body;
   const current = await dbGet('SELECT * FROM projects WHERE id=?', Number(req.params.id));
   if (!current) return res.status(404).json({ error: 'not found' });
-  await dbRun('UPDATE projects SET name=?, color=?, expected_hours=?, description=?, links=? WHERE id=?',
+  await dbRun('UPDATE projects SET name=?, color=?, expected_hours=?, description=?, links=?, is_active=? WHERE id=?',
     name ?? current.name,
     color ?? current.color,
     expected_hours ?? current.expected_hours,
     description ?? current.description,
     links ?? current.links,
+    is_active === undefined ? current.is_active : (is_active ? 1 : 0),
     Number(req.params.id)
   );
   res.json({ ok: true });
@@ -232,18 +233,46 @@ app.delete('/api/work/:id', ah(async (req, res) => {
 }));
 
 // -------- Todos --------
+// Recalcula el status ('pending'|'in_progress'|'completed') a partir de sus subtareas.
+async function recomputeTodoStatus(todoId) {
+  const subtasks = await dbAll('SELECT done FROM todo_subtasks WHERE todo_id=?', todoId);
+  let status = 'pending';
+  if (subtasks.length > 0) {
+    const doneCount = subtasks.filter(s => !!s.done).length;
+    status = doneCount === 0 ? 'pending' : doneCount === subtasks.length ? 'completed' : 'in_progress';
+  }
+  await dbRun('UPDATE todos SET status=? WHERE id=?', status, todoId);
+  return status;
+}
+
+async function attachSubtasks(todos) {
+  if (todos.length === 0) return todos;
+  const ids = todos.map(t => t.id);
+  const placeholders = ids.map(() => '?').join(',');
+  const subtasks = await dbAll(`SELECT * FROM todo_subtasks WHERE todo_id IN (${placeholders}) ORDER BY sort_order, id`, ...ids);
+  const byTodo = new Map();
+  for (const s of subtasks) {
+    if (!byTodo.has(s.todo_id)) byTodo.set(s.todo_id, []);
+    byTodo.get(s.todo_id).push(s);
+  }
+  return todos.map(t => ({ ...t, subtasks: byTodo.get(t.id) || [] }));
+}
+
 app.get('/api/todos', ah(async (req, res) => {
   const { date, from, to } = req.query;
   let rows;
   if (date) rows = await dbAll('SELECT * FROM todos WHERE date=? ORDER BY sort_order, id', date);
-  else if (from && to) rows = await dbAll('SELECT * FROM todos WHERE date BETWEEN ? AND ? ORDER BY date, sort_order, id', from, to);
+  else if (from && to) rows = await dbAll('SELECT * FROM todos WHERE date IS NOT NULL AND date <= ? AND COALESCE(end_date, date) >= ? ORDER BY date, sort_order, id', to, from);
   else rows = await dbAll("SELECT * FROM todos ORDER BY COALESCE(date, ''), sort_order, id");
-  res.json(rows);
+  res.json(await attachSubtasks(rows));
 }));
 app.post('/api/todos', ah(async (req, res) => {
-  const { date, text } = req.body;
+  const { date, text, end_date, extended, priority } = req.body;
   const nextOrder = (await dbGet('SELECT COALESCE(MAX(sort_order), 0) + 1 AS value FROM todos WHERE date IS NOT DISTINCT FROM ?', date ?? null)).value;
-  const info = await dbRun('INSERT INTO todos(date, text, done, sort_order) VALUES(?,?,0,?) RETURNING id', date ?? null, text, nextOrder);
+  const info = await dbRun(
+    'INSERT INTO todos(date, text, done, sort_order, end_date, extended, priority) VALUES(?,?,0,?,?,?,?) RETURNING id',
+    date ?? null, text, nextOrder, end_date ?? null, extended ? 1 : 0, priority || 'normal'
+  );
   res.json({ id: info.lastInsertRowid });
 }));
 app.put('/api/todos/reorder', ah(async (req, res) => {
@@ -269,7 +298,7 @@ app.put('/api/todos/reorder', ah(async (req, res) => {
   res.json({ ok: true });
 }));
 app.put('/api/todos/:id', ah(async (req, res) => {
-  const { text, done } = req.body;
+  const { text, done, end_date, extended, priority } = req.body;
   const current = await dbGet('SELECT * FROM todos WHERE id=?', Number(req.params.id));
   if (!current) return res.status(404).json({ error: 'not found' });
   const newDate = 'date' in req.body ? req.body.date : current.date;
@@ -277,15 +306,19 @@ app.put('/api/todos/:id', ah(async (req, res) => {
   const nextOrder = movedDate
     ? (await dbGet('SELECT COALESCE(MAX(sort_order), 0) + 1 AS value FROM todos WHERE date IS NOT DISTINCT FROM ?', newDate ?? null)).value
     : current.sort_order;
-  await dbRun('UPDATE todos SET text=?, done=?, date=?, sort_order=? WHERE id=?',
-    text ?? current.text, done ?? current.done, newDate, nextOrder, Number(req.params.id));
+  await dbRun('UPDATE todos SET text=?, done=?, date=?, sort_order=?, end_date=?, extended=?, priority=? WHERE id=?',
+    text ?? current.text, done ?? current.done, newDate, nextOrder,
+    'end_date' in req.body ? end_date : current.end_date,
+    extended === undefined ? current.extended : (extended ? 1 : 0),
+    priority || current.priority,
+    Number(req.params.id));
   res.json({ ok: true });
 }));
 app.delete('/api/todos/:id', ah(async (req, res) => {
   await dbRun('DELETE FROM todos WHERE id=?', Number(req.params.id));
   res.json({ ok: true });
 }));
-// Carry-over: duplica una tarea al día siguiente (o a la fecha indicada)
+// Carry-over / duplicar: copia una tarea al día siguiente (o a la fecha indicada), incl. subtareas
 app.post('/api/todos/:id/carry-over', ah(async (req, res) => {
   const current = await dbGet('SELECT * FROM todos WHERE id=?', Number(req.params.id));
   if (!current) return res.status(404).json({ error: 'not found' });
@@ -293,20 +326,66 @@ app.post('/api/todos/:id/carry-over', ah(async (req, res) => {
   if (!toDate && current.date) {
     toDate = addDaysIso(current.date, 1);
   }
+  // Si la tarea tiene rango (fecha fin), desplaza el fin el mismo nº de días que el inicio
+  let toEndDate = null;
+  if (current.end_date && current.date && toDate) {
+    const spanDays = (new Date(current.end_date + 'T00:00:00') - new Date(current.date + 'T00:00:00')) / 86400000;
+    toEndDate = addDaysIso(toDate, spanDays);
+  }
   const nextOrder = (await dbGet('SELECT COALESCE(MAX(sort_order), 0) + 1 AS value FROM todos WHERE date IS NOT DISTINCT FROM ?', toDate ?? null)).value;
-  const info = await dbRun('INSERT INTO todos(date, text, done, sort_order) VALUES(?,?,0,?) RETURNING id',
-    toDate ?? null, current.text, nextOrder);
-  res.json({ id: info.lastInsertRowid, date: toDate, text: current.text });
+  const info = await dbRun(
+    'INSERT INTO todos(date, text, done, sort_order, end_date, extended, priority) VALUES(?,?,0,?,?,?,?) RETURNING id',
+    toDate ?? null, current.text, nextOrder, toEndDate, current.extended, current.priority
+  );
+  const newId = info.lastInsertRowid;
+  await dbRun(
+    'INSERT INTO todo_subtasks(todo_id, text, done, sort_order) SELECT ?, text, 0, sort_order FROM todo_subtasks WHERE todo_id=?',
+    newId, current.id
+  );
+  await recomputeTodoStatus(newId);
+  res.json({ id: newId, date: toDate, text: current.text });
 }));
 // Unassigned todos: date IS NULL, not done
 app.get('/api/todos/unassigned', ah(async (req, res) => {
-  res.json(await dbAll('SELECT * FROM todos WHERE date IS NULL AND done=0 ORDER BY sort_order, id'));
+  res.json(await attachSubtasks(await dbAll('SELECT * FROM todos WHERE date IS NULL AND done=0 ORDER BY sort_order, id')));
 }));
-// Overdue todos: not done, date < today
+// Overdue todos: not done, effective end date (end_date si existe, si no date) < today
 app.get('/api/todos/overdue', ah(async (req, res) => {
   const { before } = req.query;
   if (!before) return res.status(400).json({ error: 'before required' });
-  res.json(await dbAll('SELECT * FROM todos WHERE done=0 AND date IS NOT NULL AND date < ? ORDER BY date, sort_order, id', before));
+  res.json(await dbAll(
+    "SELECT * FROM todos WHERE done=0 AND date IS NOT NULL AND COALESCE(end_date, date) < ? ORDER BY date, sort_order, id",
+    before
+  ));
+}));
+
+// -------- Subtareas --------
+app.post('/api/todos/:id/subtasks', ah(async (req, res) => {
+  const todoId = Number(req.params.id);
+  const { text } = req.body;
+  if (!text || !text.trim()) return res.status(400).json({ error: 'text required' });
+  const nextOrder = (await dbGet('SELECT COALESCE(MAX(sort_order), 0) + 1 AS value FROM todo_subtasks WHERE todo_id=?', todoId)).value;
+  const info = await dbRun('INSERT INTO todo_subtasks(todo_id, text, done, sort_order) VALUES(?,?,0,?) RETURNING id', todoId, text.trim(), nextOrder);
+  const status = await recomputeTodoStatus(todoId);
+  res.json({ id: info.lastInsertRowid, todo_id: todoId, text: text.trim(), done: 0, sort_order: nextOrder, status });
+}));
+app.put('/api/todos/subtasks/:subtaskId', ah(async (req, res) => {
+  const subtaskId = Number(req.params.subtaskId);
+  const current = await dbGet('SELECT * FROM todo_subtasks WHERE id=?', subtaskId);
+  if (!current) return res.status(404).json({ error: 'not found' });
+  const { text, done } = req.body;
+  await dbRun('UPDATE todo_subtasks SET text=?, done=? WHERE id=?',
+    text ?? current.text, done === undefined ? current.done : (done ? 1 : 0), subtaskId);
+  const status = await recomputeTodoStatus(current.todo_id);
+  res.json({ ok: true, status });
+}));
+app.delete('/api/todos/subtasks/:subtaskId', ah(async (req, res) => {
+  const subtaskId = Number(req.params.subtaskId);
+  const current = await dbGet('SELECT * FROM todo_subtasks WHERE id=?', subtaskId);
+  if (!current) return res.status(404).json({ error: 'not found' });
+  await dbRun('DELETE FROM todo_subtasks WHERE id=?', subtaskId);
+  const status = await recomputeTodoStatus(current.todo_id);
+  res.json({ ok: true, status });
 }));
 
 // -------- Events --------
@@ -411,7 +490,7 @@ app.get('/api/day/:date', ah(async (req, res) => {
     work: await dbAll(`SELECT w.*, p.name AS project_name, p.color AS project_color
       FROM work_entries w LEFT JOIN projects p ON p.id = w.project_id
       WHERE w.date=? ORDER BY w.start_time`, date),
-    todos: await dbAll('SELECT * FROM todos WHERE date=? ORDER BY sort_order, id', date),
+    todos: await attachSubtasks(await dbAll('SELECT * FROM todos WHERE date IS NOT NULL AND date <= ? AND COALESCE(end_date, date) >= ? ORDER BY sort_order, id', date, date)),
     events: await dbAll('SELECT * FROM events WHERE date=? ORDER BY id', date),
     labor: (await dbGet('SELECT * FROM labor_days WHERE date=?', date)) || null,
     meetings: mergedMeetings,
@@ -685,12 +764,11 @@ function scheduleDailyCache() {
 }
 
 const PORT = process.env.PORT || 4000;
+// El servidor arranca SIEMPRE, aunque la BBDD falle al iniciar: así Outlook y
+// el resto de rutas que no dependen de la BBDD siguen funcionando, y las que
+// sí dependen devuelven 503 (ver middleware de dbReady más arriba) en vez de
+// tumbar todo el proceso.
 dbReady
-  .then(() => {
-    scheduleDailyCache();
-    app.listen(PORT, () => console.log(`API listening on http://localhost:${PORT}`));
-  })
-  .catch(err => {
-    console.error('[db] Error inicializando la base de datos:', err.message);
-    process.exit(1);
-  });
+  .then(() => scheduleDailyCache())
+  .catch(err => console.error('[db] Error inicializando la base de datos:', err.message));
+app.listen(PORT, () => console.log(`API listening on http://localhost:${PORT}`));

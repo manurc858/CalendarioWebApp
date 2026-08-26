@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { CalendarDays, CircleAlert, Clock3, ListTodo, UsersRound } from 'lucide-react';
 import { monthMatrix, DOW, iso, LABOR_TYPES, effectiveLabor, calcMeetingHours } from '../utils.js';
 
 export default function Calendar({ cursor, today, onSelect, laborMap, daySummaries, selectedDay, onDropTodo }) {
@@ -34,18 +35,20 @@ export default function Calendar({ cursor, today, onSelect, laborMap, daySummari
           const isToday = dIso === todayIso;
           const isSelected = dIso === selectedDay;
           const hasWork = totalHours > 0;
-          const hasTodos = summary?.todos?.length > 0;
-          const hasEvents = summary?.events?.length > 0;
-          const hasMeetings = summary?.meetings?.length > 0;
+          const pendingTodoCount = summary?.todos?.filter(todo => !todo.done).length || 0;
+          const eventCount = summary?.events?.length || 0;
+          const meetingCount = summary?.meetings?.length || 0;
           const isWorkday = eff.type === 'laborable';
           const isFuture = new Date(dIso + 'T00:00:00') > today;
+          const isMissingWork = isWorkday && !isFuture && !hasWork;
           const ariaLabel = [
             date.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' }),
             eff.label || null,
-            totalHours > 0 ? `${totalHours.toFixed(1)} horas` : null,
-            hasTodos ? 'con tareas' : null,
-            hasEvents ? 'con eventos' : null,
-            hasMeetings ? 'con reuniones' : null,
+            hasWork ? `${totalHours.toFixed(1)} horas computadas` : null,
+            isMissingWork ? 'sin horas registradas' : null,
+            pendingTodoCount ? `${pendingTodoCount} ${pendingTodoCount === 1 ? 'tarea pendiente' : 'tareas pendientes'}` : null,
+            eventCount ? `${eventCount} ${eventCount === 1 ? 'evento' : 'eventos'}` : null,
+            meetingCount ? `${meetingCount} ${meetingCount === 1 ? 'reunión' : 'reuniones'}` : null,
           ].filter(Boolean).join(', ');
 
           return (
@@ -78,16 +81,38 @@ export default function Calendar({ cursor, today, onSelect, laborMap, daySummari
                 {inMonth && (
                   <div className="cal-icons">
                     {hasWork
-                      ? <span className="cal-icon work" title={`${totalHours.toFixed(2)}h`}>🕐</span>
-                      : (isWorkday && !isFuture && <span className="cal-icon no-work" title="Sin horas">🕐</span>)
+                      ? (
+                        <span className="cal-icon cal-icon-hours" title={`${totalHours.toFixed(1)} horas computadas`}>
+                          <Clock3 aria-hidden="true" />
+                          <span>{totalHours.toFixed(1)}h</span>
+                        </span>
+                      )
+                      : (isMissingWork && (
+                        <span className="cal-icon cal-icon-missing" title="Sin horas registradas">
+                          <CircleAlert aria-hidden="true" />
+                          <span>0h</span>
+                        </span>
+                      ))
                     }
-                    {hasTodos && <span className="cal-icon todo" title="Tareas">✅</span>}
-                    {hasEvents && <span className="cal-icon event" title="Eventos">📌</span>}
-                    {hasMeetings && <span className="cal-icon meeting" title={`${summary.meetings.length} reunión(es)`}>📞</span>}
+                    {pendingTodoCount > 0 && (
+                      <span className="cal-icon cal-icon-todo" title={`${pendingTodoCount} ${pendingTodoCount === 1 ? 'tarea pendiente' : 'tareas pendientes'}`}>
+                        <ListTodo aria-hidden="true" />
+                        <span className="cal-icon-count">{pendingTodoCount}</span>
+                      </span>
+                    )}
+                    {eventCount > 0 && (
+                      <span className="cal-icon cal-icon-event" title={`${eventCount} ${eventCount === 1 ? 'evento' : 'eventos'}`}>
+                        <CalendarDays aria-hidden="true" />
+                        <span className="cal-icon-count">{eventCount}</span>
+                      </span>
+                    )}
+                    {meetingCount > 0 && (
+                      <span className="cal-icon cal-icon-meeting" title={`${meetingCount} ${meetingCount === 1 ? 'reunión' : 'reuniones'}`}>
+                        <UsersRound aria-hidden="true" />
+                        <span className="cal-icon-count">{meetingCount}</span>
+                      </span>
+                    )}
                   </div>
-                )}
-                {totalHours > 0 && (
-                  <div className="cal-total">{totalHours.toFixed(1)}h</div>
                 )}
               </div>
             </button>

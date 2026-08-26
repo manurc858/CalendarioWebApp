@@ -1,24 +1,20 @@
 import { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { LABOR_TYPES, MONTH_NAMES, iso, isWeekend, calcMeetingHours } from '../utils.js';
 import { api } from '../api.js';
+import TaskLabel from './TaskLabel.jsx';
 
 export default function YearView({
-  year, laborMap, activeType, onChange, onJump, onDayPeek
+  year, laborMap, activeType, onChange, onJump, onDayPeek, onReload
 }) {
   const [painting, setPainting] = useState(false);
-  const [popup, setPopup] = useState(null); // { date, data, x, y }
+  const [popup, setPopup] = useState(null); // { date, data, title }
   const [openWorkNotes, setOpenWorkNotes] = useState({});
   const [loading, setLoading] = useState(false);
   const [eventDates, setEventDates] = useState(new Set());
-  const popupRef = useRef(null);
-  const lastTriggerRef = useRef(null);
+  const dialogRef = useRef(null);
 
   const closePopup = useCallback(() => {
     setPopup(null);
-    const trigger = lastTriggerRef.current;
-    if (trigger && typeof trigger.focus === 'function' && document.contains(trigger)) {
-      requestAnimationFrame(() => trigger.focus());
-    }
   }, []);
 
   // Load events for the whole year to show dots
@@ -47,30 +43,19 @@ export default function YearView({
   }, [year]);
 
   useEffect(() => {
-    if (!popup) return;
-
-    const popupNode = popupRef.current;
-    if (!popupNode) return;
-
-    const onToggle = (event) => {
-      if (event.newState === 'closed') closePopup();
-    };
-
-    popupNode.addEventListener('toggle', onToggle);
-    requestAnimationFrame(() => {
-      if (typeof popupNode.showPopover === 'function' && !popupNode.matches(':popover-open')) {
-        popupNode.showPopover();
-      }
-      popupNode.focus();
-    });
-
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    if (popup && !dialog.open) dialog.showModal();
+    if (!popup && dialog.open) dialog.close();
+    const onCancel = e => { e.preventDefault(); closePopup(); };
+    const onClick = e => { if (e.target === dialog) closePopup(); };
+    dialog.addEventListener('cancel', onCancel);
+    dialog.addEventListener('click', onClick);
     return () => {
-      popupNode.removeEventListener('toggle', onToggle);
-      if (typeof popupNode.hidePopover === 'function' && popupNode.matches(':popover-open')) {
-        popupNode.hidePopover();
-      }
+      dialog.removeEventListener('cancel', onCancel);
+      dialog.removeEventListener('click', onClick);
     };
-  }, [popup]);
+  }, [popup, closePopup]);
 
   useEffect(() => {
     setOpenWorkNotes({});
@@ -92,24 +77,12 @@ export default function YearView({
       // Móvil: bottom sheet con el detalle del día (igual que la vista mensual)
       onDayPeek(key);
     } else {
-      // Open day detail popup
-      lastTriggerRef.current = e.currentTarget;
       setLoading(true);
-      setPopup(null);
       try {
         const data = await api.getDay(key);
-        // Position near the click but within viewport
-        const vw = window.innerWidth;
-        const vh = window.innerHeight;
-        let x = e.clientX + 12;
-        let y = e.clientY + 12;
-        if (x + 360 > vw) x = vw - 370;
-        if (y + 300 > vh) y = vh - 310;
-        if (x < 10) x = 10;
-        if (y < 10) y = 10;
         const title = new Date(key + 'T00:00:00')
           .toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' });
-        setPopup({ date: key, data, x, y, title });
+        setPopup({ date: key, data, title });
       } catch { /* ignore */ }
       setLoading(false);
     }
@@ -182,8 +155,9 @@ export default function YearView({
         ))}
       </div>
 
-      {/* Day detail popup */}
-      {popup && (() => {
+      {/* Day detail dialog */}
+      <dialog ref={dialogRef} className="yv-dialog" aria-labelledby="yv-dialog-title">
+        {popup && (() => {
         const pd = new Date(popup.date + 'T00:00:00');
         const pdow = pd.getDay();
         const pTarget = (pdow >= 1 && pdow <= 4) ? 8.75 : pdow === 5 ? 6 : 0;
@@ -192,20 +166,11 @@ export default function YearView({
         const pTotal = pWork + pMeet;
         const pPct = pTarget > 0 ? Math.min(100, (pTotal / pTarget) * 100) : 0;
         const prettyDate = popup.title;
-        const popupTitleId = `year-popup-title-${popup.date}`;
+        const popupTitleId = 'yv-dialog-title';
 
         return (
         <>
-          <div
-            ref={popupRef}
-            className="yv-popup"
-            style={{ left: popup.x, top: popup.y }}
-            popover="auto"
-            role="dialog"
-            aria-modal="false"
-            aria-labelledby={popupTitleId}
-            tabIndex={-1}
-          >
+          <div className="yv-popup">
             <div className="yv-popup-head">
               <span id={popupTitleId} className="yv-popup-date">{prettyDate.charAt(0).toUpperCase() + prettyDate.slice(1)}</span>
               <button type="button" className="yv-popup-close" onClick={closePopup} aria-label="Cerrar detalle del día">✕</button>
@@ -224,28 +189,19 @@ export default function YearView({
             <div className="yv-popup-body">
               {/* Work */}
               <div className="yv-popup-section">
-                <div className="yv-popup-label">🕐 Horarios</div>
+                <div className="yv-popup-label">🕐 Horas</div>
                 {popup.data.work.length === 0
                   ? <span className="yv-popup-empty">Sin registros</span>
                   : popup.data.work.map(w => {
                     const isOpen = !!openWorkNotes[w.id];
                     return (
-                    <div key={w.id} className={`yv-popup-work-item ${isOpen ? 'note-open' : ''}`}>
-                      <div className="yv-popup-work-top">
-                        <span className="yv-popup-work-swatch" style={{ background: w.project_color || '#4f8cff' }} />
-                        <span className="yv-popup-proj">{w.project_name || 'Sin proyecto'}</span>
-                        <span className="yv-popup-hours">{w.hours}h</span>
-                        {w.note && (
-                          <button
-                            type="button"
-                            className={`note-tri ${isOpen ? 'open' : ''}`}
-                            onClick={() => toggleWorkNote(w.id)}
-                            aria-expanded={isOpen}
-                            title="Ver nota"
-                          >▶</button>
-                        )}
+                    <div key={w.id} className="yv-card">
+                      <div className="yv-card-bar" style={{ background: w.project_color || '#4f8cff' }} />
+                      <div className="yv-card-body">
+                        <span className="yv-card-title">{w.project_name || 'Sin proyecto'}</span>
+                        {w.note && <span className="yv-card-sub">{w.note}</span>}
                       </div>
-                      {w.note && <div className="yv-popup-work-note">{w.note}</div>}
+                      <span className="yv-card-badge">{w.hours}h</span>
                     </div>
                     );
                   })
@@ -259,7 +215,11 @@ export default function YearView({
                   ? <span className="yv-popup-empty">Sin tareas</span>
                   : popup.data.todos.map(t => (
                     <div key={t.id} className={`yv-popup-row ${t.done ? 'done' : ''}`}>
-                      <span>{t.done ? '☑' : '☐'} {t.text}</span>
+                      <TaskLabel todo={t} onChanged={async () => {
+                        const data = await api.getDay(popup.date);
+                        setPopup(prev => prev ? { ...prev, data } : prev);
+                        onReload?.();
+                      }} />
                     </div>
                   ))
                 }
@@ -285,9 +245,15 @@ export default function YearView({
                 {popup.data.meetings.length === 0
                   ? <span className="yv-popup-empty">Sin reuniones</span>
                   : popup.data.meetings.map((mt, i) => (
-                    <div key={i} className="yv-popup-row">
-                      <span>{mt.title}</span>
-                      {mt.startTime && <span className="yv-popup-time">{mt.startTime}–{mt.endTime}</span>}
+                    <div key={i} className="yv-card" style={{ '--meeting-color': mt.project_color || (mt.isCustom ? '#a78bfa' : '#94a3b8') }}>
+                      <div className="yv-card-bar" style={{ background: 'var(--meeting-color)' }} />
+                      <div className="yv-card-body">
+                        <span className="yv-card-title">{mt.title}</span>
+                        {mt.startTime && <span className="yv-card-sub">{mt.startTime}{mt.endTime ? `–${mt.endTime}` : ''}</span>}
+                      </div>
+                      {mt.attending === false || mt.attending === 0
+                        ? <span className="yv-card-att absent" title="No asiste">✕</span>
+                        : <span className="yv-card-att attending" title="Asiste">✓</span>}
                     </div>
                   ))
                 }
@@ -297,6 +263,7 @@ export default function YearView({
         </>
         );
       })()}
+      </dialog>
     </div>
   );
 }

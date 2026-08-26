@@ -4,7 +4,7 @@
   border: 1px solid var(--line);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
-  overflow: hidden;
+  overflow: visible;
 }
 .day-detail-head {
   display: flex; align-items: center; justify-content: space-between;
@@ -110,6 +110,7 @@
   font-size: 12px; font-weight: 700; color: var(--muted);
   text-transform: uppercase; letter-spacing: .6px; margin: 0 0 8px;
 }
+.work-section-title { display: flex; align-items: center; gap: 6px; }
 .day-section-empty {
   font-size: 13px; color: var(--muted); font-style: italic;
   padding: 4px 0;
@@ -121,10 +122,27 @@
 .day-entries > li { list-style: none; }
 .day-entry {
   display: flex; align-items: flex-start; gap: 10px;
-  padding: 8px 10px; border-radius: var(--radius-sm);
-  background: var(--bg); border: 1px solid var(--line-2);
-  transition: border-color 0.2s, background-color 0.2s, box-shadow 0.2s;
+  padding: 8px 10px; border-radius: 9px;
+  background: #fff; border: 1px solid #e7e9ed;
+  box-shadow: 0 1px 4px rgba(39,45,55,.07);
+  transition: box-shadow 0.2s;
 }
+.work-entry-card {
+  position: relative; align-items: center; min-height: 52px; padding: 9px 10px;
+  border-color: #e7e9ed; border-radius: 14px; background: #fff;
+  box-shadow: 0 4px 12px rgba(39, 45, 55, .1);
+}
+.work-entry-card:hover { box-shadow: 0 6px 15px rgba(39, 45, 55, .13); }
+.work-entry-card .day-entry-swatch { width: 4px; min-height: 34px; border-radius: 4px; }
+.work-entry-card .day-entry-time { gap: 2px; color: var(--ink); font-size: 15px; line-height: 1.15; }
+.work-entry-card .day-entry-time small { color: var(--muted); font-size: 11px; font-weight: 700; }
+.work-entry-card .day-entry-project { margin-top: 3px; color: var(--muted); font-size: 11px; }
+.work-entry-card .day-entry-actions { gap: 3px; }
+.work-entry-card .btn-edit,
+.work-entry-card .btn-delete,
+.work-entry-card .note-tri { width: 28px; height: 28px; border-radius: 7px; }
+.work-entry-card.note-open { align-items: flex-start; }
+.work-entry-card .day-entry-note { margin: 2px 0 2px 14px; padding: 8px 10px; border-radius: 8px; background: #f7f8fa; }
 .day-entry.drag-over {
   border-color: var(--accent);
   background-color: var(--bg-hover);
@@ -148,8 +166,7 @@ textarea.drag-over {
   margin: 1px 0;
 }
 .day-entry-swatch {
-  width: 4px; min-height: 28px; border-radius: 4px; flex: 0 0 auto;
-  margin-top: 2px;
+  width: 3px; min-height: 28px; align-self: stretch; border-radius: 2px; flex: 0 0 auto;
 }
 .day-entry-info { flex: 1; min-width: 0; }
 .day-entry-time {
@@ -187,11 +204,10 @@ textarea.drag-over {
 .done { text-decoration: line-through; color: var(--muted); }
 .event-entry { align-items: center; gap: 8px; }
 
-/* Meeting entries (Outlook) */
+/* Meeting entries */
 .meeting-entry {
   flex-direction: row !important; align-items: stretch !important;
-  padding: 10px 12px !important; gap: 10px !important;
-  transition: border-color .15s, box-shadow .15s;
+  padding: 8px 10px !important; gap: 10px !important;
 }
 .meeting-assigned {
   border-color: color-mix(in srgb, var(--line-2), transparent 20%);
@@ -247,12 +263,24 @@ textarea.drag-over {
   margin-top: 8px;
 }
 .work-add-form {
-  display: flex; flex-direction: column; gap: 6px;
-  margin-top: 8px;
+  display: flex; flex-direction: column; gap: 7px;
+  margin-top: 8px; padding: 9px;
+  border: 1px solid #e7e9ed; border-radius: 12px; background: #f8f9fa;
 }
 .work-add-row {
-  display: flex; gap: 6px; align-items: center;
+  display: grid; grid-template-columns: minmax(105px, .75fr) minmax(0, 1fr) 36px;
+  gap: 7px; align-items: center;
 }
+.work-hours-field {
+  display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center;
+  height: 36px; padding: 0 9px; border: 1px solid var(--line); border-radius: 9px;
+  background: #fff; color: var(--muted); transition: border-color .15s, box-shadow .15s;
+}
+.work-hours-field:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.work-hours-field .hours-input { width: 100%; height: 34px; padding: 0 4px; border: 0; background: transparent; }
+.work-hours-field .hours-input:focus { border-color: transparent; }
+.work-hours-field > span { font-size: 11px; font-weight: 700; }
+.work-add-form > .inline-textarea { min-height: 36px; padding: 8px 10px; border-radius: 9px; background: #fff; }
 .inline-textarea {
   width: 100%; padding: 6px 10px; border-radius: 8px;
   border: 1px solid var(--line); background: var(--bg);
@@ -291,6 +319,9 @@ textarea.drag-over {
 }
 .fb-date-input {
   width: 100%;
+  padding-left: 30px;
+}
+.schedule-date-fields .fb-date-input {
   padding-left: 30px;
 }
 
@@ -466,7 +497,7 @@ textarea.drag-over {
   border-color: var(--accent);
   color: var(--accent);
 }
-.work-add-form .hours-input { width: 150px; }
+.work-add-form .hours-input { width: 100%; }
 .note-input { flex: 1; min-width: 0; }
 .flex-1 { flex: 1; min-width: 0; }
 .inline-select {
@@ -478,6 +509,10 @@ textarea.drag-over {
   font-size: 13px; color: var(--ink); outline: none;
 }
 .inline-select .fb-dropdown-btn:focus { border-color: var(--accent); }
+.work-project-select { width: 100%; max-width: none; }
+.work-project-select .fb-dropdown-btn { width: 100%; height: 36px; padding-inline: 10px; border-radius: 9px; background: #fff; }
+.work-project-select .fb-dropdown-btn:focus-visible { box-shadow: 0 0 0 3px var(--accent-soft); }
+.work-add-submit { width: 36px; height: 36px; border-radius: 9px; }
 .btn-add {
   width: 32px; height: 32px; border-radius: 8px;
   background: var(--accent); color: white; border: none;
@@ -522,26 +557,22 @@ textarea.drag-over {
   transition: all .12s;
 }
 .btn-edit:hover { background: var(--line-2); color: var(--ink); border-color: var(--line); }
+@media (max-width: 420px) {
+  .work-add-row { grid-template-columns: minmax(92px, .8fr) minmax(0, 1.2fr) 36px; }
+  .work-entry-card .day-entry-actions { gap: 0; }
+}
+.meeting-att-btn {
+  appearance: none; width: 22px; height: 22px; border-radius: 50%; flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700; cursor: pointer; border: 2px solid;
+  transition: all .12s; align-self: center;
+}
 .meeting-att-btn.attending {
-  color: #15803d;
-  border-color: #86efac;
-  background: #f0fdf4;
-  font-weight: 700;
+  background: #15803d; border-color: #15803d; color: #fff;
 }
-.meeting-att-btn.attending:hover {
-  color: #166534;
-  border-color: #4ade80;
-  background: #dcfce7;
-}
+.meeting-att-btn.attending:hover { background: #166534; border-color: #166534; }
 .meeting-att-btn.absent {
-  color: #b91c1c;
-  border-color: #fca5a5;
-  background: #fef2f2;
-  font-weight: 700;
+  background: transparent; border-color: #94a3b8; color: #94a3b8;
 }
-.meeting-att-btn.absent:hover {
-  color: #991b1b;
-  border-color: #f87171;
-  background: #fee2e2;
-}
+.meeting-att-btn.absent:hover { border-color: #b91c1c; color: #b91c1c; }
 

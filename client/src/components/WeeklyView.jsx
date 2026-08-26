@@ -5,6 +5,7 @@ import MeetingNotesEditor from './MeetingNotesEditor.jsx';
 import CreateMeetingModal from './CreateMeetingModal.jsx';
 import CreateTaskModal from './CreateTaskModal.jsx';
 import FlowbiteDateInput from './FlowbiteDateInput.jsx';
+import TaskLabel from './TaskLabel.jsx';
 
 const DOW_SHORT = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 
@@ -105,7 +106,16 @@ export default function WeeklyView({ today, onReload, laborMap = {}, resetSignal
     const todos = await api.listTodos({ from: weekFrom, to: weekTo });
     const map = {};
     weekDays.forEach(d => { map[iso(d)] = []; });
-    todos.forEach(t => { if (map[t.date]) map[t.date].push(t); });
+    todos.forEach(t => {
+      const start = t.date;
+      const end = t.end_date || t.date;
+      weekDays.forEach(d => {
+        const dayIso = iso(d);
+        if (dayIso >= start && dayIso <= end && map[dayIso] !== undefined) {
+          map[dayIso].push({ ...t, _displayDate: dayIso });
+        }
+      });
+    });
     setWeekTodos(map);
   }, [weekFrom, weekTo]);
 
@@ -152,7 +162,8 @@ export default function WeeklyView({ today, onReload, laborMap = {}, resetSignal
 
   const handleDragStart = (e, todo) => {
     e.dataTransfer.setData('application/x-todo-id', String(todo.id));
-    e.dataTransfer.setData('application/x-todo-date', todo.date || '');
+    // Usar _displayDate para que el reordenamiento dentro del mismo día funcione correctamente
+    e.dataTransfer.setData('application/x-todo-date', todo._displayDate || todo.date || '');
     e.dataTransfer.setData('text/plain', todo.text);
     e.dataTransfer.effectAllowed = 'move';
   };
@@ -163,7 +174,9 @@ export default function WeeklyView({ today, onReload, laborMap = {}, resetSignal
   }, [unassigned, weekTodos]);
 
   const reorderBucket = useCallback(async (dateIso, todoId, beforeId = null) => {
-    const orderedIds = insertTodoAt(getBucketTodos(dateIso), todoId, beforeId).map(todo => todo.id);
+    // Solo incluir tareas cuya fecha de inicio coincide con el bucket (excluir continuaciones multi-día)
+    const bucketOwned = getBucketTodos(dateIso).filter(t => t.date === dateIso || dateIso == null);
+    const orderedIds = insertTodoAt(bucketOwned, todoId, beforeId).map(todo => todo.id);
     if (orderedIds.length === 0) return;
     await api.reorderTodos(dateIso, orderedIds);
   }, [getBucketTodos]);
@@ -343,11 +356,26 @@ export default function WeeklyView({ today, onReload, laborMap = {}, resetSignal
                 const meetingType = m.isCustom ? 'custom' : 'outlook';
                 const meetingRef = m.isCustom ? String(m.customId) : m.uid;
                 return (
-                  <div key={`${m.uid}|${m.date}|${m.startTime || ''}|${m.endTime || ''}|${m.title || ''}`} className={`wv-meeting ${m.isCustom ? 'custom' : ''}`}>
-                    <div className="wv-meeting-color" style={{ background: m.project_color || (m.isCustom ? '#a78bfa' : '#64748b') }} />
+                  <div key={`${m.uid}|${m.date}|${m.startTime || ''}|${m.endTime || ''}|${m.title || ''}`}
+                    className={`wv-meeting ${m.isCustom ? 'custom' : ''} ${m.attending === false || m.attending === 0 ? 'absent' : ''}`}
+                    style={{ '--meeting-color': m.project_color || (m.isCustom ? '#a78bfa' : '#94a3b8') }}
+                  >
+                    {/* círculo check/cancel de asistencia */}
+                    {!m.isCustom ? (
+                      <button
+                        className={`wv-meeting-att ${m.attending === false || m.attending === 0 ? 'absent' : 'attending'}`}
+                        onClick={async () => {
+                          await api.setMeetingAttendance(m.uid, dateIso, m.attending === false || m.attending === 0);
+                          reloadAll();
+                        }}
+                        title={m.attending === false || m.attending === 0 ? 'Marcar como asisto' : 'Marcar como no asisto'}
+                      />
+                    ) : (
+                      <span className="wv-meeting-att attending" style={{ pointerEvents: 'none' }} />
+                    )}
                     <div className="wv-meeting-info">
                       <span className="wv-meeting-title">
-                        {m.repeat === 'weekly' && <span className="meeting-recurring-badge" title="Se repite cada semana">↻</span>}
+                        {m.repeat === 'weekly' && <span className="meeting-recurring-badge" title="Se repite cada semana">↻ </span>}
                         {m.title}
                       </span>
                       <span className="wv-meeting-time">
@@ -359,24 +387,15 @@ export default function WeeklyView({ today, onReload, laborMap = {}, resetSignal
                       onClick={() => setNotesEditor({ meetingType, meetingRef, meetingDate: dateIso })}
                       title="Notas"
                     >📝</button>
-                    {!m.isCustom && (
-                      <button
-                        className={`btn-delete wv-task-del meeting-att-btn ${m.attending === false || m.attending === 0 ? 'absent' : 'attending'}`}
-                        onClick={async () => {
-                          await api.setMeetingAttendance(m.uid, dateIso, m.attending === false || m.attending === 0);
-                          reloadAll();
-                        }}
-                        title={m.attending === false || m.attending === 0 ? 'Marcar como asisto (contará horas)' : 'Marcar como no asisto (no contará horas)'}
-                      >{m.attending === false || m.attending === 0 ? '✕' : '✓'}</button>
-                    )}
                     {m.isCustom && (
                       <button
-                        className="btn-delete wv-task-del"
+                        className="wv-meeting-del"
                         onClick={async () => {
                           if (m.repeat === 'weekly' && !confirm('Esta reunión se repite cada semana. Se eliminará la serie completa. ¿Continuar?')) return;
                           await api.deleteCustomMeeting(m.customId);
                           reloadAll();
                         }}
+                        title="Eliminar"
                       >✕</button>
                     )}
                   </div>
@@ -405,13 +424,7 @@ export default function WeeklyView({ today, onReload, laborMap = {}, resetSignal
                 }}
               >
                 <input type="checkbox" checked={false} onChange={() => markDone(t.id)} className="wv-task-check" />
-                <span className="wv-task-text">
-                  {t.text}
-                </span>
-                <button className="btn-carry-over wv-task-del" title="Pasar al día siguiente" onClick={() => {
-                  carryOverTodo(t.id, iso(addDays(new Date(dateIso + 'T00:00:00'), 1)));
-                }}>⏭</button>
-                <button className="btn-delete wv-task-del" onClick={() => deleteTodo(t.id)}>✕</button>
+                <TaskLabel todo={t} compact={dateIso !== todayIso} onChanged={() => { loadTodos(); loadOverdue(); onReload?.(); }} />
               </div>
             </div>
           ))}
@@ -420,8 +433,7 @@ export default function WeeklyView({ today, onReload, laborMap = {}, resetSignal
               {done.map(t => (
                 <div key={t.id} className="wv-task done">
                   <input type="checkbox" checked onChange={() => unmarkDone(t.id)} className="wv-task-check" />
-                  <span className="wv-task-text">{t.text}</span>
-                  <button className="btn-delete wv-task-del" onClick={() => deleteTodo(t.id)}>✕</button>
+                  <TaskLabel todo={t} onChanged={() => { loadTodos(); loadOverdue(); onReload?.(); }} />
                 </div>
               ))}
             </div>
