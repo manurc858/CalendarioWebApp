@@ -19,6 +19,14 @@
   --radius: 14px;
   --radius-sm: 10px;
   --radius-lg: 20px;
+  /* Calendario laboral: fondo y texto por tipo de día */
+  --labor-laborable-bg: #ffffff; --labor-laborable-fg: #1a1f36;
+  --labor-finde-bg: #f1f5f9; --labor-finde-fg: #64748b;
+  --labor-festivo-es-bg: #fecaca; --labor-festivo-es-fg: #7f1d1d;
+  --labor-festivo-idom-bg: #c7d2fe; --labor-festivo-idom-fg: #312e81;
+  --labor-festivo-auton-bg: #bbf7d0; --labor-festivo-auton-fg: #14532d;
+  --labor-festivo-local-bg: #a5f3fc; --labor-festivo-local-fg: #155e75;
+  --labor-vacaciones-bg: #fde68a; --labor-vacaciones-fg: #713f12;
 }
 
 * { box-sizing: border-box; }

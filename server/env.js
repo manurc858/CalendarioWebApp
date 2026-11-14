@@ -7,5 +7,5 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 try {
   process.loadEnvFile(path.join(__dirname, '.env'));
 } catch {
-  // sin .env: se usan las variables de entorno del sistema (p. ej. en Render)
+  // sin .env: se usan las variables de entorno del sistema (p. ej. en Vercel)
 }

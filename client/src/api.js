@@ -10,6 +10,8 @@ async function req(path, opts = {}) {
   try {
     res = await fetch(BASE + path, {
       headers: { 'Content-Type': 'application/json' },
+      // la cookie de sesión debe viajar también si la API está en otro dominio
+      credentials: import.meta.env.VITE_API_URL ? 'include' : 'same-origin',
       ...opts,
       body: opts.body ? JSON.stringify(opts.body) : undefined,
     });
@@ -19,11 +21,25 @@ async function req(path, opts = {}) {
     throw err;
   }
   emitApiStatus(true);
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  if (res.status === 401 && !path.startsWith('/auth/')) {
+    // sesión caducada o inexistente: la app muestra la pantalla de acceso
+    window.dispatchEvent(new CustomEvent('api-unauthorized'));
+  }
+  if (!res.ok) {
+    const err = new Error(`${res.status} ${res.statusText}`);
+    err.status = res.status;
+    try { err.detail = (await res.json())?.error; } catch { /* sin cuerpo JSON */ }
+    throw err;
+  }
   return res.json();
 }
 
 export const api = {
+  // acceso
+  authStatus: () => req('/auth/status'),
+  login: (password) => req('/auth/login', { method: 'POST', body: { password } }),
+  logout: () => req('/auth/logout', { method: 'POST' }),
+
   // projects
   listProjects: () => req('/projects'),
   projectStats: (from, to) => req(`/projects/stats${from && to ? `?${new URLSearchParams({ from, to })}` : ''}`),
@@ -102,6 +118,14 @@ export const api = {
   getMeetingNotes: (meeting_type, meeting_ref, meeting_date) =>
     req(`/meeting-notes?${new URLSearchParams({ meeting_type, meeting_ref, meeting_date })}`),
   saveMeetingNotes: (data) => req('/meeting-notes', { method: 'PUT', body: data }),
+
+  listAllMeetingNotes: () => req('/meeting-notes/all'),
+
+  // notas
+  listNotes: () => req('/notes'),
+  createNote: (data) => req('/notes', { method: 'POST', body: data }),
+  updateNote: (id, data) => req(`/notes/${id}`, { method: 'PUT', body: data }),
+  deleteNote: (id) => req(`/notes/${id}`, { method: 'DELETE' }),
 
   // AI Chat
   aiChat: (message) => req('/ai/chat', { method: 'POST', body: { message } }),

@@ -606,7 +606,7 @@ export default function DayDetailPanel({ date, laborMap, projects, onReload }) {
                         />
                         <button
                           className="btn btn-ghost btn-sm meeting-notes-btn"
-                          onClick={() => setNotesEditor({ meetingType, meetingRef, meetingDate: date })}
+                          onClick={() => setNotesEditor({ meetingType, meetingRef, meetingDate: date, meetingTitle: m.title, projectName: projects.find(p => p.id === m.project_id)?.name || '' })}
                         >
                           📝 Notas
                         </button>
@@ -657,6 +657,8 @@ export default function DayDetailPanel({ date, laborMap, projects, onReload }) {
           meetingType={notesEditor.meetingType}
           meetingRef={notesEditor.meetingRef}
           meetingDate={notesEditor.meetingDate}
+          meetingTitle={notesEditor.meetingTitle}
+          projectName={notesEditor.projectName}
           onClose={() => setNotesEditor(null)}
         />
       )}

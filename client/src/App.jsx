@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useMemo, useState, useCallback } from 'react';
 import { api } from './api.js';
-import { MONTH_NAMES, iso } from './utils.js';
+import { MONTH_NAMES, iso, cacheGet, cacheSet, getThemePref, setThemePref } from './utils.js';
 import Calendar from './components/Calendar.jsx';
 import DayDetailPanel from './components/DayDetailPanel.jsx';
 import LaborSidebar from './components/LaborSidebar.jsx';
@@ -9,40 +9,51 @@ import MobileNav from './components/MobileNav.jsx';
 import DaySheet from './components/DaySheet.jsx';
 import TodayScreen from './components/TodayScreen.jsx';
 import { FluidTabs } from './components/FluidTabs.jsx';
+import CommandPalette from './components/CommandPalette.jsx';
 import { LABOR_TYPES, LABOR_ORDER } from './utils.js';
 
 const YearView = lazy(() => import('./components/YearView.jsx'));
 const ProjectsPage = lazy(() => import('./components/ProjectsPage.jsx'));
+const NotesPage = lazy(() => import('./components/NotesPage.jsx'));
 // DESACTIVADO (no eliminar): PixelAgent (agente IA gemma)
 // const PixelAgent = lazy(() => import('./components/PixelAgent.jsx'));
 
-export default function App() {
+const monthKeyOf = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+
+export default function App({ onLogout = null }) {
   const today = new Date();
   const [cursor, setCursor] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
   const [selectedDay, setSelectedDay] = useState(iso(today));
-  const [view, setView] = useState('weekly'); // 'weekly' | 'monthly' | 'annual' | 'projects'
+  const [view, setView] = useState('weekly'); // 'weekly' | 'monthly' | 'annual' | 'projects' | 'notes'
   const [calendarTab, setCalendarTab] = useState('weekly'); // última sub-vista de calendario activa
   const [activeType, setActiveType] = useState('vacaciones');
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [theme, setTheme] = useState(getThemePref);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   // DESACTIVADO (no eliminar): estado del PixelAgent (agente IA gemma)
   // const [showPixelAgent, setShowPixelAgent] = useState(false);
 
   const [apiOffline, setApiOffline] = useState(false);
 
-  const [projects, setProjects] = useState([]);
-  const [projectStats, setProjectStats] = useState([]);
-  const [monthWorkEntries, setMonthWorkEntries] = useState([]);
-  const [laborMap, setLaborMap] = useState({});
-  const [daySummaries, setDaySummaries] = useState({});
-  const [settings, setSettings] = useState({ vacation_total: '23' });
+  // Estado inicial desde la caché local: la app se pinta al instante con los
+  // últimos datos conocidos y se actualiza cuando responde el servidor.
+  const initialMonth = useMemo(() => cacheGet(`month:${monthKeyOf(cursor)}`, null), []); // eslint-disable-line react-hooks/exhaustive-deps
+  const [projects, setProjects] = useState(() => cacheGet('projects', []));
+  const [projectStats, setProjectStats] = useState(() => initialMonth?.stats || []);
+  const [monthWorkEntries, setMonthWorkEntries] = useState(() => initialMonth?.work || []);
+  const [laborMap, setLaborMap] = useState(() => cacheGet(`labor:${today.getFullYear()}`, {}));
+  const [daySummaries, setDaySummaries] = useState(() => initialMonth?.map || {});
+  const [settings, setSettings] = useState(() => cacheGet('settings', { vacation_total: '23' }));
 
   const reloadProjects = useCallback(async () => {
     try {
       const list = await api.listProjects();
-      setProjects(Array.isArray(list) ? list : []);
+      const next = Array.isArray(list) ? list : [];
+      setProjects(next);
+      cacheSet('projects', next);
     } catch (err) {
+      // sin conexión: se mantienen los últimos datos conocidos
       console.error('Error cargando proyectos:', err);
-      setProjects([]);
     }
   }, []);
   // proyectos hibernados no deben ofrecerse al registrar horas/reuniones
@@ -50,36 +61,49 @@ export default function App() {
   const reloadSettings = useCallback(async () => {
     try {
       const s = await api.getSettings();
-      setSettings(s && typeof s === 'object' ? s : { vacation_total: '23' });
+      const next = s && typeof s === 'object' ? s : { vacation_total: '23' };
+      setSettings(next);
+      cacheSet('settings', next);
     } catch (err) {
       console.error('Error cargando ajustes:', err);
-      setSettings({ vacation_total: '23' });
     }
   }, []);
 
   const reloadLabor = useCallback(async () => {
+    const year = cursor.getFullYear();
+    const cached = cacheGet(`labor:${year}`, null);
+    if (cached) setLaborMap(cached);
     try {
-      const year = cursor.getFullYear();
       const rows = await api.listLabor(`${year}-01-01`, `${year}-12-31`);
       const map = {};
       (rows || []).forEach(r => { if (r && r.date) map[r.date] = r; });
       setLaborMap(map);
+      cacheSet(`labor:${year}`, map);
     } catch (err) {
       console.error('Error cargando jornada laboral:', err);
-      setLaborMap({});
+      if (!cached) setLaborMap({});
     }
   }, [cursor]);
 
   const reloadMonth = useCallback(async () => {
+    const cacheKey = `month:${monthKeyOf(cursor)}`;
+    const cached = cacheGet(cacheKey, null);
+    if (cached) {
+      setMonthWorkEntries(cached.work || []);
+      setDaySummaries(cached.map || {});
+      setProjectStats(cached.stats || []);
+    }
     try {
       const y = cursor.getFullYear();
       const m = cursor.getMonth();
       const from = iso(new Date(y, m, 1));
       const to = iso(new Date(y, m + 1, 0));
+      // Si falla alguna petición se lanza el error y se conservan los datos
+      // en caché, en vez de pintar un mes vacío.
       const [work, events, todos, stats, meetings] = await Promise.all([
-        api.listWork({ from, to }).catch(() => []),
-        api.listEvents({ from, to }).catch(() => []),
-        api.listTodos({ from, to }).catch(() => []),
+        api.listWork({ from, to }),
+        api.listEvents({ from, to }),
+        api.listTodos({ from, to }),
         api.projectStats(from, to).catch(() => []),
         api.listMeetings({ from, to }).catch(() => []),
       ]);
@@ -100,14 +124,19 @@ export default function App() {
         }
       });
       (meetings || []).forEach(mt => { if (mt && mt.date) ensure(mt.date).meetings.push(mt); });
-      setMonthWorkEntries(Array.isArray(work) ? work : []);
+      const nextWork = Array.isArray(work) ? work : [];
+      const nextStats = Array.isArray(stats) ? stats : [];
+      setMonthWorkEntries(nextWork);
       setDaySummaries(map);
-      setProjectStats(Array.isArray(stats) ? stats : []);
+      setProjectStats(nextStats);
+      cacheSet(cacheKey, { work: nextWork, map, stats: nextStats });
     } catch (err) {
       console.error('Error cargando datos del mes:', err);
-      setMonthWorkEntries([]);
-      setDaySummaries({});
-      setProjectStats([]);
+      if (!cached) {
+        setMonthWorkEntries([]);
+        setDaySummaries({});
+        setProjectStats([]);
+      }
     }
   }, [cursor]);
 
@@ -291,7 +320,8 @@ export default function App() {
     },
   ];
 
-  const viewOrder = ['calendar', 'projects'];
+  const viewOrder = ['calendar', 'projects', 'notes'];
+  const isCalendarView = view !== 'projects' && view !== 'notes';
   const handleViewTabKeyDown = (e, currentView) => {
     const currentIndex = viewOrder.indexOf(currentView);
     if (currentIndex === -1) return;
@@ -321,6 +351,39 @@ export default function App() {
     });
   };
 
+  // Ctrl+K / Cmd+K abre la paleta de comandos
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setPaletteOpen(o => !o);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  const closePalette = useCallback(() => setPaletteOpen(false), []);
+  const jumpToDate = useCallback((date) => {
+    setCursor(new Date(date.getFullYear(), date.getMonth(), 1));
+    setSelectedDay(iso(date));
+    setView('monthly');
+    setCalendarTab('monthly');
+  }, []);
+  const paletteCommands = [
+    { id: 'go-week', label: 'Ir a Semana', keywords: 'calendario semanal', hint: 'Vista', run: () => handleCalendarTabChange('weekly') },
+    { id: 'go-month', label: 'Ir a Mes', keywords: 'calendario mensual', hint: 'Vista', run: () => handleCalendarTabChange('monthly') },
+    { id: 'go-year', label: 'Ir a Año', keywords: 'calendario anual vacaciones festivos', hint: 'Vista', run: () => handleCalendarTabChange('annual') },
+    { id: 'go-projects', label: 'Ir a Proyectos', keywords: 'horas', hint: 'Vista', run: () => setView('projects') },
+    { id: 'go-notes', label: 'Ir a Notas', keywords: 'actas word markdown', hint: 'Vista', run: () => setView('notes') },
+    { id: 'go-today', label: 'Ir a hoy', keywords: 'fecha actual', hint: 'Fecha', run: () => jumpToDate(today) },
+    { id: 'export-excel', label: 'Exportar el mes a Excel', keywords: 'xlsx horas descargar', hint: 'Acción', run: () => exportMonthWorkToExcel() },
+    { id: 'theme-dark', label: 'Tema oscuro', keywords: 'modo noche', hint: 'Tema', run: () => { setThemePref('dark'); setTheme('dark'); } },
+    { id: 'theme-light', label: 'Tema claro', keywords: 'modo dia', hint: 'Tema', run: () => { setThemePref('light'); setTheme('light'); } },
+    { id: 'theme-auto', label: 'Tema según el sistema', keywords: 'automatico', hint: 'Tema', run: () => { setThemePref('auto'); setTheme('auto'); } },
+    ...(onLogout ? [{ id: 'logout', label: 'Cerrar sesión', keywords: 'salir', hint: 'Cuenta', run: onLogout }] : []),
+  ];
+
   return (
     <div className={`app ${sidebarOpen ? '' : 'sidebar-collapsed'}`}>
       {apiOffline && (
@@ -344,10 +407,10 @@ export default function App() {
               <button
                 id="view-tab-calendar"
                 role="tab"
-                aria-selected={view !== 'projects'}
+                aria-selected={isCalendarView}
                 aria-controls="view-panel-calendar"
-                tabIndex={view !== 'projects' ? 0 : -1}
-                className={`side-tab ${view !== 'projects' ? 'active' : ''}`}
+                tabIndex={isCalendarView ? 0 : -1}
+                className={`side-tab ${isCalendarView ? 'active' : ''}`}
                 onClick={() => setView(calendarTab)}
                 onKeyDown={(e) => handleViewTabKeyDown(e, 'calendar')}
               >
@@ -370,6 +433,21 @@ export default function App() {
                   <path d="M2.5 6.5a2 2 0 0 1 2-2h2.7l1.8 2H15.5a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-11a2 2 0 0 1-2-2v-8Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
                 </svg>
                 <span>Proyectos</span>
+              </button>
+              <button
+                id="view-tab-notes"
+                role="tab"
+                aria-selected={view === 'notes'}
+                aria-controls="view-panel-notes"
+                tabIndex={view === 'notes' ? 0 : -1}
+                className={`side-tab ${view === 'notes' ? 'active' : ''}`}
+                onClick={() => setView('notes')}
+                onKeyDown={(e) => handleViewTabKeyDown(e, 'notes')}
+              >
+                <svg className="side-tab-icon" aria-hidden="true" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M5 3h7l4 4v9a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 4 16V4.5A1.5 1.5 0 0 1 5.5 3M12 3v4h4M7 10.5h6M7 13.5h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                <span>Notas</span>
               </button>
             </div>
 
@@ -419,6 +497,31 @@ export default function App() {
                 </div>
               </div>
             )}
+            <div className="side-foot">
+              <button type="button" className="side-shortcut" onClick={() => setPaletteOpen(true)}>
+                <span>Buscar o ejecutar…</span>
+                <kbd>Ctrl K</kbd>
+              </button>
+              <div className="theme-switch">
+                <span id="theme-switch-label">Tema</span>
+                <div className="theme-switch-group" role="group" aria-labelledby="theme-switch-label">
+                  {[['auto', 'Auto'], ['light', 'Claro'], ['dark', 'Oscuro']].map(([id, label]) => (
+                    <button
+                      key={id}
+                      type="button"
+                      className="theme-switch-btn"
+                      aria-pressed={theme === id}
+                      onClick={() => { setThemePref(id); setTheme(id); }}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {onLogout && (
+                <button type="button" className="side-logout" onClick={onLogout}>Cerrar sesión</button>
+              )}
+            </div>
           </div>
         ) : (
           <div className="sidebar-collapsed-inner">
@@ -429,7 +532,7 @@ export default function App() {
 
       <main className="main">
         {/* ---- Calendar panel (FluidTabs + sub-views) ---- */}
-        {view !== 'projects' && (
+        {isCalendarView && (
           <section
             className="calendar-panel"
             id="view-panel-calendar"
@@ -579,6 +682,15 @@ export default function App() {
           </section>
         )}
 
+        {/* ---- Notes View ---- */}
+        {view === 'notes' && (
+          <section id="view-panel-notes" role="tabpanel" aria-labelledby="view-tab-notes" aria-label="Notas">
+            <Suspense fallback={<div className="panel-loader">Cargando notas…</div>}>
+              <NotesPage projects={projects} />
+            </Suspense>
+          </section>
+        )}
+
         {/* ---- Projects View ---- */}
         {view === 'projects' && (
           <section id="view-panel-projects" role="tabpanel" aria-labelledby="view-tab-projects" aria-label="Vista de proyectos">
@@ -628,6 +740,14 @@ export default function App() {
           onReload={reloadMonth}
         />
       )}
+      <CommandPalette
+        open={paletteOpen}
+        onClose={closePalette}
+        commands={paletteCommands}
+        today={today}
+        onJumpToDate={jumpToDate}
+        onTaskCreated={reloadMonth}
+      />
       {/* DESACTIVADO (no eliminar): PixelAgent (agente IA gemma)
       {showPixelAgent && (
         <Suspense fallback={null}>

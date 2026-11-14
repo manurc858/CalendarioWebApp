@@ -2,6 +2,7 @@
   "name": "agenda-horas",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "install:all": "npm install && npm install --prefix server && npm install --prefix client",
     "seed": "npm run seed --prefix server",

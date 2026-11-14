@@ -1,11 +1,12 @@
+// Los colores son variables CSS (ver base.css y dark.css) para que sigan al tema.
 export const LABOR_TYPES = {
-  laborable:    { label: 'Laborable',            color: '#ffffff', text: '#1a1f36' },
-  finde:        { label: 'Fin de semana',        color: '#f1f5f9', text: '#64748b' },
-  festivo_es:   { label: 'Festivos España',      color: '#fecaca', text: '#7f1d1d' },
-  festivo_idom: { label: 'Festivos IDOM',        color: '#c7d2fe', text: '#312e81' },
-  festivo_auton:{ label: 'Festivos c. autónoma', color: '#bbf7d0', text: '#14532d' },
-  festivo_local:{ label: 'Festivos locales',     color: '#a5f3fc', text: '#155e75' },
-  vacaciones:   { label: 'Vacaciones',           color: '#fde68a', text: '#713f12' },
+  laborable:    { label: 'Laborable',            color: 'var(--labor-laborable-bg)', text: 'var(--labor-laborable-fg)' },
+  finde:        { label: 'Fin de semana',        color: 'var(--labor-finde-bg)', text: 'var(--labor-finde-fg)' },
+  festivo_es:   { label: 'Festivos España',      color: 'var(--labor-festivo-es-bg)', text: 'var(--labor-festivo-es-fg)' },
+  festivo_idom: { label: 'Festivos IDOM',        color: 'var(--labor-festivo-idom-bg)', text: 'var(--labor-festivo-idom-fg)' },
+  festivo_auton:{ label: 'Festivos c. autónoma', color: 'var(--labor-festivo-auton-bg)', text: 'var(--labor-festivo-auton-fg)' },
+  festivo_local:{ label: 'Festivos locales',     color: 'var(--labor-festivo-local-bg)', text: 'var(--labor-festivo-local-fg)' },
+  vacaciones:   { label: 'Vacaciones',           color: 'var(--labor-vacaciones-bg)', text: 'var(--labor-vacaciones-fg)' },
 };
 
 export const LABOR_ORDER = [
@@ -103,4 +104,49 @@ export function availableWorkHoursForMonth(year, month, laborMap = {}) {
   }
 
   return total;
+}
+
+// -------- Caché local (última respuesta del servidor) --------
+// Permite pintar la app al instante con los últimos datos conocidos mientras
+// llega la respuesta fresca del servidor.
+const CACHE_PREFIX = 'agenda:';
+export function cacheGet(key, fallback) {
+  try {
+    const raw = localStorage.getItem(CACHE_PREFIX + key);
+    return raw ? JSON.parse(raw) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+export function cacheSet(key, value) {
+  try {
+    localStorage.setItem(CACHE_PREFIX + key, JSON.stringify(value));
+  } catch {
+    // almacenamiento lleno o bloqueado: la app funciona igual sin caché
+  }
+}
+export function cacheClear() {
+  try {
+    Object.keys(localStorage)
+      .filter(k => k.startsWith(CACHE_PREFIX) && k !== 'agenda:theme')
+      .forEach(k => localStorage.removeItem(k));
+  } catch {
+    // nada que limpiar
+  }
+}
+
+// -------- Tema (claro / oscuro / según el sistema) --------
+const THEME_KEY = 'agenda:theme';
+export function getThemePref() {
+  try { return localStorage.getItem(THEME_KEY) || 'auto'; } catch { return 'auto'; }
+}
+export function applyTheme(pref = getThemePref()) {
+  const dark = pref === 'dark'
+    || (pref === 'auto' && window.matchMedia?.('(prefers-color-scheme: dark)').matches);
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#151312' : '#faf9f7');
+}
+export function setThemePref(pref) {
+  try { localStorage.setItem(THEME_KEY, pref); } catch { /* sin almacenamiento */ }
+  applyTheme(pref);
 }

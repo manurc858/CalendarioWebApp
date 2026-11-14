@@ -4,9 +4,52 @@
     {
       "name": "agenda",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["start", "--prefix", "server"],
+      "runtimeArgs": [
+        "start",
+        "--prefix",
+        "server"
+      ],
       "port": 4000,
       "autoPort": true
+    },
+    {
+      "name": "api-local",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "start",
+        "--prefix",
+        "server"
+      ],
+      "port": 4000,
+      "env": {
+        "DATABASE_URL": ""
+      }
+    },
+    {
+      "name": "client",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--prefix",
+        "client"
+      ],
+      "port": 5173
+    },
+    {
+      "name": "prueba-local",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "start",
+        "--prefix",
+        "server"
+      ],
+      "port": 4100,
+      "autoPort": true,
+      "env": {
+        "DATABASE_URL": "",
+        "APP_PASSWORD": "prueba-local"
+      }
     }
   ]
 }

@@ -9,7 +9,7 @@
 .wv-overdue-items { display: flex; flex-wrap: wrap; gap: 6px; }
 .wv-overdue-chip {
   display: flex; align-items: center; gap: 6px;
-  background: white; border: 1px solid #ffe082; border-radius: 8px;
+  background: var(--bg-elev); border: 1px solid #ffe082; border-radius: 8px;
   padding: 4px 10px; font-size: 12px; cursor: grab;
 }
 .wv-overdue-chip:active { cursor: grabbing; }
@@ -30,7 +30,7 @@
 
 /* Left panel */
 .wv-panel {
-  background: white; border: 1.5px solid var(--line); border-radius: 12px;
+  background: var(--bg-elev); border: 1.5px solid var(--line); border-radius: 12px;
   display: flex; flex-direction: column; gap: 0;
   align-self: stretch; position: sticky; top: 0; overflow-y: auto;
   height: 100%;
@@ -104,7 +104,7 @@
   min-height: 0; height: 100%; align-content: stretch;
 }
 .wv-col {
-  background: white; border: 1.5px solid var(--line); border-radius: 12px;
+  background: var(--bg-elev); border: 1.5px solid var(--line); border-radius: 12px;
   display: flex; flex-direction: column; min-height: 0; height: 100%;
   transition: border-color .15s, box-shadow .15s, transform .15s;
   position: relative; overflow: hidden;
@@ -115,7 +115,7 @@
 /* Special (holiday / weekend / vacation) columns */
 .wv-col.special {
   background:
-    linear-gradient(180deg, var(--day-color) 0%, color-mix(in srgb, var(--day-color) 35%, white) 70px, white 160px);
+    linear-gradient(180deg, var(--day-color) 0%, color-mix(in srgb, var(--day-color) 35%, var(--bg-elev)) 70px, var(--bg-elev) 160px);
   border-color: color-mix(in srgb, var(--day-text) 25%, transparent);
 }
 .wv-col.special::before {
@@ -196,8 +196,8 @@
   right: 6px;
   height: 2px;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--accent) 78%, white);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 35%, white);
+  background: color-mix(in srgb, var(--accent) 78%, var(--bg-elev));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 35%, var(--bg-elev));
   pointer-events: none;
 }
 .wv-task.drop-before::before,
@@ -227,7 +227,7 @@
 .wv-weekend-toggle {
   display: flex; align-items: center; gap: 8px;
   padding: 8px 14px; border-radius: 10px; border: 1.5px solid var(--line);
-  background: white; font-size: 13px; font-weight: 600; color: var(--ink-2);
+  background: var(--bg-elev); font-size: 13px; font-weight: 600; color: var(--ink-2);
   cursor: pointer; width: 100%; transition: background .12s;
 }
 .wv-weekend-toggle:hover { background: var(--bg-1); }

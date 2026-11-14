@@ -11,6 +11,8 @@ export default function YearView({
   const [openWorkNotes, setOpenWorkNotes] = useState({});
   const [loading, setLoading] = useState(false);
   const [eventDates, setEventDates] = useState(new Set());
+  const [hoursByDay, setHoursByDay] = useState({});
+  const [showHeat, setShowHeat] = useState(true);
   const dialogRef = useRef(null);
 
   const closePopup = useCallback(() => {
@@ -26,6 +28,18 @@ export default function YearView({
       events.forEach(e => dates.add(e.date));
       setEventDates(dates);
     });
+  }, [year]);
+
+  // Horas registradas por día en todo el año (mapa de calor)
+  useEffect(() => {
+    let alive = true;
+    api.listWork({ from: `${year}-01-01`, to: `${year}-12-31` }).then(rows => {
+      if (!alive) return;
+      const map = {};
+      (rows || []).forEach(w => { if (w?.date) map[w.date] = (map[w.date] || 0) + (Number(w.hours) || 0); });
+      setHoursByDay(map);
+    }).catch(() => {});
+    return () => { alive = false; };
   }, [year]);
 
   const months = useMemo(() => {
@@ -106,6 +120,20 @@ export default function YearView({
             — Pulsa un día para aplicar / quitar
           </span>
         )}
+        <button
+          type="button"
+          className={`yv-heat-toggle ${showHeat ? 'active' : ''}`}
+          aria-pressed={showHeat}
+          onClick={() => setShowHeat(v => !v)}
+          title="Muestra bajo cada día una barra según las horas registradas"
+        >
+          Horas registradas
+        </button>
+        {showHeat && (
+          <span className="yv-heat-legend" aria-hidden="true">
+            menos <i data-level="1" /><i data-level="2" /><i data-level="3" /><i data-level="4" /> más
+          </span>
+        )}
       </div>
 
       <div className="year-grid">
@@ -137,16 +165,20 @@ export default function YearView({
                   : { background: typeInfo.color, color: typeInfo.text };
                 const isToday = key === todayIso;
                 const hasEvent = eventDates.has(key);
+                const dayHours = hoursByDay[key] || 0;
+                const heat = !showHeat || dayHours <= 0 ? 0 : dayHours < 3 ? 1 : dayHours < 6 ? 2 : dayHours < 8 ? 3 : 4;
+                const hoursLabel = dayHours > 0 ? `${Math.round(dayHours * 10) / 10} h registradas` : '';
                 return (
                   <button
                     key={i}
                     className={`year-day ${painting ? 'painting' : ''} ${isToday ? 'yv-today' : ''} ${isSpecial ? 'special' : ''} ${hasEvent ? 'has-event' : ''}`}
                     style={style}
-                    title={label}
+                    title={[label, hoursLabel].filter(Boolean).join(' · ')}
                     onClick={(e) => handleClick(d, e)}
                   >
                     {d.getDate()}
                     {hasEvent && <span className="yv-event-dot" />}
+                    {heat > 0 && <span className="yv-heat" data-level={heat} />}
                   </button>
                 );
               })}

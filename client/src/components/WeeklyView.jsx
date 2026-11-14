@@ -384,7 +384,7 @@ export default function WeeklyView({ today, onReload, laborMap = {}, resetSignal
                     </div>
                     <button
                       className="wv-meeting-notes-btn"
-                      onClick={() => setNotesEditor({ meetingType, meetingRef, meetingDate: dateIso })}
+                      onClick={() => setNotesEditor({ meetingType, meetingRef, meetingDate: dateIso, meetingTitle: m.title })}
                       title="Notas"
                     >📝</button>
                     {m.isCustom && (
@@ -606,6 +606,8 @@ export default function WeeklyView({ today, onReload, laborMap = {}, resetSignal
           meetingType={notesEditor.meetingType}
           meetingRef={notesEditor.meetingRef}
           meetingDate={notesEditor.meetingDate}
+          meetingTitle={notesEditor.meetingTitle}
+          projectName={notesEditor.projectName}
           onClose={() => setNotesEditor(null)}
         />
       )}

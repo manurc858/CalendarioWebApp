@@ -8,7 +8,7 @@
 }
 .cal-head {
   display: grid; grid-template-columns: repeat(7, 1fr);
-  background: #faf7f4;
+  background: var(--bg);
   border-bottom: 1px solid var(--line);
 }
 .cal-head-cell {
@@ -73,8 +73,8 @@
   background:
     linear-gradient(180deg,
       var(--day-color) 0%,
-      color-mix(in srgb, var(--day-color) 55%, white) 60%,
-      color-mix(in srgb, var(--day-color) 30%, white) 100%);
+      color-mix(in srgb, var(--day-color) 55%, var(--bg-elev)) 60%,
+      color-mix(in srgb, var(--day-color) 30%, var(--bg-elev)) 100%);
   border-color: color-mix(in srgb, var(--day-text) 22%, transparent);
 }
 .cal-cell.special::before {
@@ -91,7 +91,7 @@
   display: inline-block;
   padding: 2px 6px;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--day-text) 14%, white);
+  background: color-mix(in srgb, var(--day-text) 14%, var(--bg-elev));
   color: var(--day-text);
   border: 1px solid color-mix(in srgb, var(--day-text) 28%, transparent);
   max-width: 100%;

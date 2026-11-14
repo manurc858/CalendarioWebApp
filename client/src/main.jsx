@@ -1,7 +1,14 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import App from './App.jsx';
+import AuthGate from './components/AuthGate.jsx';
 import './styles.css';
+import { applyTheme, getThemePref } from './utils.js';
+
+// Tema: se aplica antes de pintar y sigue al sistema mientras esté en "auto"
+applyTheme();
+window.matchMedia?.('(prefers-color-scheme: dark)').addEventListener?.('change', () => {
+  if (getThemePref() === 'auto') applyTheme();
+});
 
 class RootErrorBoundary extends React.Component {
   constructor(props) {
@@ -46,7 +53,15 @@ if (typeof window !== 'undefined') {
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <RootErrorBoundary>
-      <App />
+      <AuthGate />
     </RootErrorBoundary>
   </React.StrictMode>
 );
+
+// Service worker (solo en producción): guarda la interfaz para que la app
+// abra al instante y también sin conexión. Nunca cachea la API.
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  });
+}

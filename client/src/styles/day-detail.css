@@ -10,7 +10,7 @@
   display: flex; align-items: center; justify-content: space-between;
   padding: 16px 18px;
   border-bottom: 1px solid var(--line-2);
-  background: #faf7f4;
+  background: var(--bg);
 }
 .day-detail-date {
   font-weight: 700; font-size: 15px; color: var(--ink);
@@ -29,7 +29,7 @@
 /* Day progress bar */
 .day-progress {
   display: flex; align-items: center; gap: 10px;
-  padding: 8px 18px; background: #faf7f4;
+  padding: 8px 18px; background: var(--bg);
   border-bottom: 1px solid var(--line-2);
 }
 .day-progress-bar {
@@ -123,13 +123,13 @@
 .day-entry {
   display: flex; align-items: flex-start; gap: 10px;
   padding: 8px 10px; border-radius: 9px;
-  background: #fff; border: 1px solid #e7e9ed;
+  background: var(--bg-elev); border: 1px solid #e7e9ed;
   box-shadow: 0 1px 4px rgba(39,45,55,.07);
   transition: box-shadow 0.2s;
 }
 .work-entry-card {
   position: relative; align-items: center; min-height: 52px; padding: 9px 10px;
-  border-color: #e7e9ed; border-radius: 14px; background: #fff;
+  border-color: #e7e9ed; border-radius: 14px; background: var(--bg-elev);
   box-shadow: 0 4px 12px rgba(39, 45, 55, .1);
 }
 .work-entry-card:hover { box-shadow: 0 6px 15px rgba(39, 45, 55, .13); }
@@ -274,13 +274,13 @@ textarea.drag-over {
 .work-hours-field {
   display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center;
   height: 36px; padding: 0 9px; border: 1px solid var(--line); border-radius: 9px;
-  background: #fff; color: var(--muted); transition: border-color .15s, box-shadow .15s;
+  background: var(--bg-elev); color: var(--muted); transition: border-color .15s, box-shadow .15s;
 }
 .work-hours-field:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .work-hours-field .hours-input { width: 100%; height: 34px; padding: 0 4px; border: 0; background: transparent; }
 .work-hours-field .hours-input:focus { border-color: transparent; }
 .work-hours-field > span { font-size: 11px; font-weight: 700; }
-.work-add-form > .inline-textarea { min-height: 36px; padding: 8px 10px; border-radius: 9px; background: #fff; }
+.work-add-form > .inline-textarea { min-height: 36px; padding: 8px 10px; border-radius: 9px; background: var(--bg-elev); }
 .inline-textarea {
   width: 100%; padding: 6px 10px; border-radius: 8px;
   border: 1px solid var(--line); background: var(--bg);
@@ -510,7 +510,7 @@ textarea.drag-over {
 }
 .inline-select .fb-dropdown-btn:focus { border-color: var(--accent); }
 .work-project-select { width: 100%; max-width: none; }
-.work-project-select .fb-dropdown-btn { width: 100%; height: 36px; padding-inline: 10px; border-radius: 9px; background: #fff; }
+.work-project-select .fb-dropdown-btn { width: 100%; height: 36px; padding-inline: 10px; border-radius: 9px; background: var(--bg-elev); }
 .work-project-select .fb-dropdown-btn:focus-visible { box-shadow: 0 0 0 3px var(--accent-soft); }
 .work-add-submit { width: 36px; height: 36px; border-radius: 9px; }
 .btn-add {

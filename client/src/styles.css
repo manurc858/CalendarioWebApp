@@ -20,4 +20,7 @@
 @import './styles/offline-banner.css';
 @import './styles/fluid-tabs.css';
 @import './styles/task-widget.css';
+@import './styles/notes.css';
 @import './styles/mobile.css';
+@import './styles/login.css';
+@import './styles/dark.css';

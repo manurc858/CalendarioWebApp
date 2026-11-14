@@ -1,4 +1,4 @@
-// Dock móvil: 3 ítems (Agenda · Hoy · Proyectos) con efecto liquid glass.
+// Dock móvil: Agenda · Hoy · Proyectos · Notas, con efecto liquid glass.
 // El cristal usa un SVG feDisplacementMap para distorsión en los bordes
 // (visible en Chromium; Safari aplica solo backdrop-filter como fallback).
 const DOW_SHORT = ['DOM', 'LUN', 'MAR', 'MIÉ', 'JUE', 'VIE', 'SÁB'];
@@ -7,6 +7,11 @@ const ICONS = {
   monthly: (
     <svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
       <path d="M3 5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5Zm0 4h14M7 3v4m6-4v4M6.5 12h1m3 0h1m3 0h1M6.5 14.5h1m3 0h1" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+  notes: (
+    <svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <path d="M5 3h7l4 4v9a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 4 16V4.5A1.5 1.5 0 0 1 5.5 3M12 3v4h4M7 10.5h6M7 13.5h4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   ),
   projects: (
@@ -67,7 +72,10 @@ export default function MobileNav({ view, onChangeView, onToday, todayDate }) {
           <span className="dock-orb-dow">{DOW_SHORT[todayDate.getDay()]}</span>
           <span className="dock-orb-num">{todayDate.getDate()}</span>
         </button>
-        <DockTab id="projects" label="Proyectos" view={view} onChangeView={onChangeView} />
+        <div className="dock-group">
+          <DockTab id="projects" label="Proyectos" view={view} onChangeView={onChangeView} />
+          <DockTab id="notes" label="Notas" view={view} onChangeView={onChangeView} />
+        </div>
       </nav>
     </>
   );

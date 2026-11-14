@@ -1,0 +1,41 @@
+/* ---------- Pantalla de acceso ---------- */
+.login-screen {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 24px 16px;
+}
+.login-card {
+  width: 100%;
+  max-width: 340px;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  padding: 28px 24px 24px;
+}
+.login-logo { margin-bottom: 14px; }
+.login-title { margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -.01em; }
+.login-sub { margin: 4px 0 20px; color: var(--muted); }
+.login-label { font-size: 12px; font-weight: 600; color: var(--ink-2); margin-bottom: 6px; }
+.login-input {
+  height: 42px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  font-size: 16px; /* evita el zoom automático de iOS al enfocar */
+  transition: border-color .15s, box-shadow .15s;
+}
+.login-input:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(139, 124, 255, .35);
+}
+.login-input[aria-invalid="true"] { border-color: var(--danger); }
+.login-error { margin: 8px 0 0; color: var(--danger); font-size: 13px; }
+.login-submit { margin-top: 18px; height: 42px; justify-content: center; }
+.login-submit:disabled { opacity: .55; cursor: not-allowed; }

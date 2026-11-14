@@ -129,12 +129,12 @@
   transition: background .15s, box-shadow .15s, transform .15s, border-color .15s;
 }
 .proj-list-item:hover {
-  background: #fcfbfa; border-color: color-mix(in srgb, var(--accent) 12%, var(--line));
+  background: var(--bg); border-color: color-mix(in srgb, var(--accent) 12%, var(--line));
   transform: translateY(-1px);
 }
 .proj-list-item.active {
   background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 96%, #fff), color-mix(in srgb, var(--accent-2) 88%, #fff));
-  color: white; border-color: color-mix(in srgb, var(--accent) 78%, white);
+  color: white; border-color: color-mix(in srgb, var(--accent) 78%, var(--bg-elev));
   box-shadow: 0 10px 22px rgba(45,38,32,.12);
 }
 .proj-list-item.active .proj-list-hours,
@@ -175,7 +175,7 @@
 .proj-chip {
   display: flex; align-items: center; gap: 6px;
   padding: 4px 10px; border: 1px solid var(--line); border-radius: 8px;
-  font-size: 12px; background: #faf7f4;
+  font-size: 12px; background: var(--bg);
 }
 .proj-chip .btn-delete { width: 18px; height: 18px; font-size: 10px; }
 .proj-empty { text-align: center; color: var(--muted); padding: 16px; font-size: 13px; }
@@ -284,7 +284,7 @@
 .proj-detail-hero {
   padding: 18px 18px 14px;
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--project-color) 18%, white), rgba(255,255,255,.98) 58%),
+    linear-gradient(180deg, color-mix(in srgb, var(--project-color) 18%, var(--bg-elev)), rgba(255,255,255,.98) 58%),
     var(--bg-elev);
   border-bottom: 1px solid var(--line);
   box-shadow: inset 0 6px 0 0 var(--project-color);
@@ -316,7 +316,7 @@
 }
 .proj-hibernate-switch:not(.is-hibernated) { background: var(--accent); border-color: var(--accent); }
 .proj-hibernate-knob {
-  display: block; width: 14px; height: 14px; border-radius: 50%; background: #fff;
+  display: block; width: 14px; height: 14px; border-radius: 50%; background: var(--bg-elev);
   box-shadow: 0 1px 2px rgba(0,0,0,.25); transform: translateX(0); transition: transform .15s;
 }
 .proj-hibernate-switch:not(.is-hibernated) .proj-hibernate-knob { transform: translateX(16px); }
@@ -358,7 +358,7 @@
   padding: 0 18px;
 }
 .proj-detail-card {
-  background: #fcfbfa; border: 1px solid var(--line); border-radius: var(--radius-sm);
+  background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius-sm);
   padding: 14px; box-shadow: var(--shadow-sm);
 }
 .proj-detail-card--activity { margin: 0 18px 18px; }
@@ -374,7 +374,7 @@
 .proj-toggle-btn:hover { border-color: var(--accent); color: var(--accent); }
 .proj-empty-card {
   display: flex; flex-direction: column; gap: 8px; align-items: flex-start; text-align: left;
-  padding: 18px; border-radius: var(--radius-sm); background: #fcfbfa;
+  padding: 18px; border-radius: var(--radius-sm); background: var(--bg);
 }
 .proj-empty-card strong { font-size: 13px; }
 .proj-empty-card span { color: var(--muted); font-size: 12px; }

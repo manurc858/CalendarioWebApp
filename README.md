@@ -92,20 +92,39 @@ npm run migrate:supabase --prefix server
 > El script de migracion es idempotente: vacia las tablas destino y vuelve a copiar.
 > `agenda.db` no se toca; si quitas `DATABASE_URL` vuelves al modo local.
 
-## Despliegue (URL para el movil)
+## Despliegue en Vercel
 
-El servidor sirve tambien el cliente compilado (`client/dist`), asi que basta un
-unico servicio Node. Con [Render](https://render.com) (gratis) + GitHub:
+El cliente (`client/dist`) se sirve como estático desde la CDN de Vercel y la
+API Express de `server/` se ejecuta como función serverless (`api/index.js`);
+`vercel.json` reescribe `/api/*` hacia ella. Los datos siguen en Supabase.
 
-1. Sube el repo a GitHub.
-2. En Render: **New → Web Service**, conecta el repo.
-3. Configuracion:
-   - **Build command:** `npm install && npm install --prefix server && npm install --prefix client && npm run build --prefix client`
-   - **Start command:** `npm start --prefix server`
-4. Variables de entorno en Render: `DATABASE_URL` (la de Supabase, variante *Session pooler*) y `OUTLOOK_ICS_URL` (opcional).
-5. Render te da una URL `https://tu-app.onrender.com` — esa es la que abres desde el movil.
+1. En [vercel.com](https://vercel.com): **Add New → Project** e importa este repo de GitHub.
+   Vercel lee `vercel.json` (instalación, build, rewrites y cron ya configurados).
+2. Variables de entorno (**Settings → Environment Variables**):
+   - `DATABASE_URL` — en Supabase: **Connect → Transaction pooler** (puerto **6543**).
+     En serverless hay que usar este pooler, no el *Session pooler* (5432), o se
+     agotan las conexiones. **Nunca la subas al repo.**
+   - `APP_PASSWORD` — contraseña de acceso a la app. Sin ella la API queda pública.
+   - `OUTLOOK_ICS_URL` (opcional) — calendario de Outlook.
+   - `CRON_SECRET` (recomendada) — protege el cron diario de reuniones
+     (`api/cron/cache-meetings.js`); Vercel la envía sola en la cabecera `Authorization`.
+3. Despliega. API y cliente comparten dominio (`https://tu-app.vercel.app`), así
+   que `VITE_API_URL` debe quedar vacía.
 
-> El tier gratuito de Render duerme tras 15 min sin uso; la primera visita tarda ~30 s en despertar.
+> La copia diaria de reuniones de Outlook la hace un **Vercel Cron Job**; de paso
+> mantiene activo el proyecto gratuito de Supabase, que se pausa tras una semana sin uso.
+
+### Otros hosts (Render, VPS)
+
+Sigue funcionando como un único servicio Node: build
+`npm run install:all && npm run build --prefix client`, arranque
+`npm start --prefix server`, y las mismas variables de entorno (aquí
+`DATABASE_URL` puede ser el *Session pooler*).
+
+### Probar en local con contraseña
+
+La configuración `prueba-local` de `.claude/launch.json` arranca el servidor con
+SQLite local y una contraseña de prueba, sin tocar Supabase.
 
 ### Comprobacion rapida antes de hacer push
 

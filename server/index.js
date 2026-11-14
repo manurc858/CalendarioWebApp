@@ -8,6 +8,7 @@ import { dbAll, dbGet, dbRun, initDb, usingPostgres } from './db.js';
 import { getMeetingsInRange, getMeetingsForDate, refreshMeetings } from './outlook.js';
 import { localIso, addDaysIso } from './dates.js';
 import { cacheOutlookMeetings } from './meetingsCache.js';
+import { mountAuth, authRequired } from './auth.js';
 // DESACTIVADO (no eliminar): agente IA conectado al modelo gemma (LM Studio)
 // import { initAI, chatWithAI, saveDailySnapshot } from './ai.js';
 
@@ -23,8 +24,20 @@ process.on('unhandledRejection', (reason) => {
 });
 
 const app = express();
-app.use(cors());
-app.use(express.json());
+// La app y la API comparten dominio, así que no hace falta CORS. Solo se
+// habilita si el cliente se sirve desde otro origen (CORS_ORIGIN, separados por comas).
+if (process.env.CORS_ORIGIN) {
+  const origins = process.env.CORS_ORIGIN.split(',').map(o => o.trim()).filter(Boolean);
+  app.use(cors({ origin: origins, credentials: true }));
+}
+app.use(express.json({ limit: '2mb' }));
+
+// Acceso con contraseña (APP_PASSWORD). Va antes del middleware de la BBDD
+// para que las peticiones sin sesión no lleguen a tocarla.
+mountAuth(app);
+if (!authRequired() && (process.env.VERCEL || process.env.NODE_ENV === 'production')) {
+  console.warn('[auth] APP_PASSWORD no está definida: la API es pública.');
+}
 
 // Se memoriza la promesa para no reinicializar la BBDD en cada request.
 const dbReady = initDb();
@@ -673,6 +686,59 @@ app.put('/api/meeting-notes', ah(async (req, res) => {
   res.json({ ok: true });
 }));
 
+// Todas las notas de reunión con contenido, con el título de su reunión
+// (para el apartado Notas y su buscador).
+app.get('/api/meeting-notes/all', ah(async (req, res) => {
+  const rows = await dbAll(`
+    SELECT mn.meeting_type, mn.meeting_ref, mn.meeting_date, mn.notes,
+           COALESCE(cm.title, oc.title, 'Reunión') AS title
+    FROM meeting_notes mn
+    LEFT JOIN custom_meetings cm ON mn.meeting_type = 'custom' AND CAST(cm.id AS TEXT) = mn.meeting_ref
+    LEFT JOIN outlook_meetings_cache oc ON oc.uid = mn.meeting_ref AND oc.date = mn.meeting_date
+    WHERE mn.notes <> ''
+    ORDER BY mn.meeting_date DESC
+    LIMIT 300
+  `);
+  res.json(rows);
+}));
+
+// -------- Notas --------
+const nowStamp = () => new Date().toISOString();
+app.get('/api/notes', ah(async (req, res) => {
+  res.json(await dbAll('SELECT * FROM notes ORDER BY pinned DESC, updated_at DESC'));
+}));
+app.post('/api/notes', ah(async (req, res) => {
+  const { title = '', body = '', project_id = null, pinned = 0 } = req.body || {};
+  const now = nowStamp();
+  const info = await dbRun(
+    'INSERT INTO notes(title, body, project_id, pinned, created_at, updated_at) VALUES(?,?,?,?,?,?) RETURNING id',
+    String(title), String(body), project_id ? Number(project_id) : null, pinned ? 1 : 0, now, now
+  );
+  res.json(await dbGet('SELECT * FROM notes WHERE id=?', info.lastInsertRowid));
+}));
+app.put('/api/notes/:id', ah(async (req, res) => {
+  const id = Number(req.params.id);
+  const current = await dbGet('SELECT * FROM notes WHERE id=?', id);
+  if (!current) return res.status(404).json({ error: 'not found' });
+  const { title, body, project_id, pinned } = req.body || {};
+  // fijar/desfijar no cambia la fecha de edición
+  const contentChanged = title !== undefined || body !== undefined || project_id !== undefined;
+  await dbRun(
+    'UPDATE notes SET title=?, body=?, project_id=?, pinned=?, updated_at=? WHERE id=?',
+    title !== undefined ? String(title) : current.title,
+    body !== undefined ? String(body) : current.body,
+    project_id !== undefined ? (project_id ? Number(project_id) : null) : current.project_id,
+    pinned !== undefined ? (pinned ? 1 : 0) : current.pinned,
+    contentChanged ? nowStamp() : current.updated_at,
+    id
+  );
+  res.json(await dbGet('SELECT * FROM notes WHERE id=?', id));
+}));
+app.delete('/api/notes/:id', ah(async (req, res) => {
+  await dbRun('DELETE FROM notes WHERE id=?', Number(req.params.id));
+  res.json({ ok: true });
+}));
+
 // -------- AI Chat (AGENTE IA gemma DESACTIVADO - no eliminar) --------
 // Nota: ai.js sigue usando la API síncrona de better-sqlite3; si se reactiva
 // el agente habrá que adaptarlo al adaptador dbAll/dbGet/dbRun de db.js.
@@ -735,18 +801,22 @@ app.post('/api/ai/snapshot', async (req, res) => {
 // initAI();
 
 // -------- Cliente estático (build de producción) --------
-// Si existe client/dist (p. ej. en Render), el servidor sirve la app entera:
-// una sola URL para API + interfaz, accesible desde el móvil.
-const clientDist = path.join(__dirname, '..', 'client', 'dist');
-if (fs.existsSync(clientDist)) {
-  app.use(express.static(clientDist));
-  app.use((req, res, next) => {
-    if (req.method === 'GET' && !req.path.startsWith('/api') && !path.extname(req.path)) {
-      return res.sendFile(path.join(clientDist, 'index.html'));
-    }
-    next();
-  });
-  console.log('[static] Sirviendo cliente desde client/dist');
+// Fuera de Vercel (local o un host con proceso persistente), si existe
+// client/dist el propio servidor sirve la app entera: una sola URL para
+// API + interfaz. En Vercel el cliente lo sirve la plataforma como estático
+// y esta función solo atiende /api/* (ver vercel.json).
+if (!process.env.VERCEL) {
+  const clientDist = path.join(__dirname, '..', 'client', 'dist');
+  if (fs.existsSync(clientDist)) {
+    app.use(express.static(clientDist));
+    app.use((req, res, next) => {
+      if (req.method === 'GET' && !req.path.startsWith('/api') && !path.extname(req.path)) {
+        return res.sendFile(path.join(clientDist, 'index.html'));
+      }
+      next();
+    });
+    console.log('[static] Sirviendo cliente desde client/dist');
+  }
 }
 
 function scheduleDailyCache() {
@@ -763,12 +833,19 @@ function scheduleDailyCache() {
   }, ms);
 }
 
-const PORT = process.env.PORT || 4000;
-// El servidor arranca SIEMPRE, aunque la BBDD falle al iniciar: así Outlook y
-// el resto de rutas que no dependen de la BBDD siguen funcionando, y las que
-// sí dependen devuelven 503 (ver middleware de dbReady más arriba) en vez de
-// tumbar todo el proceso.
-dbReady
-  .then(() => scheduleDailyCache())
-  .catch(err => console.error('[db] Error inicializando la base de datos:', err.message));
-app.listen(PORT, () => console.log(`API listening on http://localhost:${PORT}`));
+export default app;
+
+// En Vercel no hay proceso persistente: ni app.listen() ni los temporizadores
+// sobreviven entre invocaciones. La copia diaria de reuniones se hace allí con
+// un Vercel Cron Job (ver vercel.json y api/cron/cache-meetings.js).
+if (!process.env.VERCEL) {
+  const PORT = process.env.PORT || 4000;
+  // El servidor arranca SIEMPRE, aunque la BBDD falle al iniciar: así Outlook y
+  // el resto de rutas que no dependen de la BBDD siguen funcionando, y las que
+  // sí dependen devuelven 503 (ver middleware de dbReady más arriba) en vez de
+  // tumbar todo el proceso.
+  dbReady
+    .then(() => scheduleDailyCache())
+    .catch(err => console.error('[db] Error inicializando la base de datos:', err.message));
+  app.listen(PORT, () => console.log(`API listening on http://localhost:${PORT}`));
+}
