@@ -2,8 +2,6 @@ import { useState, useEffect, useCallback } from 'react';
 import { api } from '../api.js';
 import { iso, addDays, MONTH_NAMES, LABOR_TYPES, effectiveLabor } from '../utils.js';
 import MeetingNotesEditor from './MeetingNotesEditor.jsx';
-import CreateMeetingModal from './CreateMeetingModal.jsx';
-import CreateTaskModal from './CreateTaskModal.jsx';
 import FlowbiteDateInput from './FlowbiteDateInput.jsx';
 import TaskLabel from './TaskLabel.jsx';
 
@@ -92,8 +90,10 @@ export default function WeeklyView({ today, onReload, laborMap = {}, resetSignal
   const [todoDate, setTodoDate] = useState('');
   const [weekendOpen, setWeekendOpen] = useState(false);
   const [notesEditor, setNotesEditor] = useState(null);
-  const [showCreateMeeting, setShowCreateMeeting] = useState(null); // date string or null
-  const [showCreateTask, setShowCreateTask] = useState(null); // date string or null
+  const [selectedDate, setSelectedDate] = useState(null);
+  const [quickType, setQuickType] = useState('task');
+  const [quickText, setQuickText] = useState('');
+  const [weekEvents, setWeekEvents] = useState({});
 
   const todayIso = iso(today);
   const baseDate = new Date(today);
@@ -132,6 +132,15 @@ export default function WeeklyView({ today, onReload, laborMap = {}, resetSignal
     } catch { setWeekMeetings({}); }
   }, [weekFrom, weekTo]);
 
+  const loadEvents = useCallback(async () => {
+    try {
+      const events = await api.listEvents({ from: weekFrom, to: weekTo });
+      const map = {};
+      events.forEach(ev => { (map[ev.date] ||= []).push(ev); });
+      setWeekEvents(map);
+    } catch { setWeekEvents({}); }
+  }, [weekFrom, weekTo]);
+
   const loadOverdue = useCallback(async () => {
     try { setOverdue(await api.overdueTodos(todayIso)); } catch { setOverdue([]); }
   }, [todayIso]);
@@ -141,16 +150,16 @@ export default function WeeklyView({ today, onReload, laborMap = {}, resetSignal
   }, []);
 
   const reloadAll = useCallback(() => {
-    loadTodos(); loadMeetings(); loadOverdue(); loadUnassigned(); onReload?.();
-  }, [loadTodos, loadMeetings, loadOverdue, loadUnassigned, onReload]);
+    loadTodos(); loadMeetings(); loadEvents(); loadOverdue(); loadUnassigned(); onReload?.();
+  }, [loadTodos, loadMeetings, loadEvents, loadOverdue, loadUnassigned, onReload]);
 
-  useEffect(() => { loadTodos(); loadMeetings(); loadOverdue(); loadUnassigned(); }, [loadTodos, loadMeetings, loadOverdue, loadUnassigned]);
+  useEffect(() => { loadTodos(); loadMeetings(); loadEvents(); loadOverdue(); loadUnassigned(); }, [loadTodos, loadMeetings, loadEvents, loadOverdue, loadUnassigned]);
 
   useEffect(() => {
     // Evita sondear la API mientras la pestaña está en segundo plano
     const poll = () => {
       if (document.hidden) return;
-      loadTodos(); loadMeetings(); loadOverdue(); loadUnassigned();
+      loadTodos(); loadMeetings(); loadEvents(); loadOverdue(); loadUnassigned();
     };
     const id = setInterval(poll, 5000);
     document.addEventListener('visibilitychange', poll);
@@ -158,7 +167,36 @@ export default function WeeklyView({ today, onReload, laborMap = {}, resetSignal
       clearInterval(id);
       document.removeEventListener('visibilitychange', poll);
     };
-  }, [loadTodos, loadMeetings, loadOverdue, loadUnassigned]);
+  }, [loadTodos, loadMeetings, loadEvents, loadOverdue, loadUnassigned]);
+
+  const QUICK_TYPES = [
+    { key: 'task', icon: '✓', label: 'Tarea', placeholder: 'Nueva tarea…' },
+    { key: 'event', icon: '📌', label: 'Evento', placeholder: 'Nuevo evento…' },
+    { key: 'delivery', icon: '📦', label: 'Entrega', placeholder: 'Nueva entrega…' },
+    { key: 'meeting', icon: '📅', label: 'Reunión', placeholder: 'Nueva reunión…' },
+  ];
+
+  const quickAdd = async (e, dateIso) => {
+    e.preventDefault();
+    const text = quickText.trim();
+    if (!text) return;
+    if (quickType === 'task') {
+      await api.createTodo({ date: dateIso, text, extended: false, end_date: null, priority: 'normal' });
+    } else if (quickType === 'meeting') {
+      const now = new Date();
+      const pad = n => String(n).padStart(2, '0');
+      const start = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
+      const end = now.getHours() >= 23 ? '23:59' : `${pad(now.getHours() + 1)}:${pad(now.getMinutes())}`;
+      await api.createCustomMeeting({
+        date: dateIso, title: text, start_time: start, end_time: end,
+        all_day: false, repeat: 'none', repeat_until: null,
+      });
+    } else {
+      await api.createEvent({ date: dateIso, title: text, kind: quickType });
+    }
+    setQuickText('');
+    reloadAll();
+  };
 
   const handleDragStart = (e, todo) => {
     e.dataTransfer.setData('application/x-todo-id', String(todo.id));
@@ -307,6 +345,8 @@ export default function WeeklyView({ today, onReload, laborMap = {}, resetSignal
     const isToday = dateIso === todayIso;
     const todos = weekTodos[dateIso] || [];
     const meetings = weekMeetings[dateIso] || [];
+    const events = weekEvents[dateIso] || [];
+    const isSelected = (selectedDate ?? (weekDays.some(w => iso(w) === todayIso) ? todayIso : null)) === dateIso;
     const isDrop = dropTarget === dateIso;
     const pending = todos.filter(t => !t.done);
     const done = todos.filter(t => t.done);
@@ -328,12 +368,34 @@ export default function WeeklyView({ today, onReload, laborMap = {}, resetSignal
         onDragLeave={() => setDropTarget(null)}
         onDrop={e => handleDrop(e, dateIso)}
       >
-        <div className="wv-col-head">
+        <div className="wv-col-head" onClick={() => setSelectedDate(dateIso)}>
           <span className="wv-col-dow">{DOW_SHORT[i]}</span>
           <span className={`wv-col-num ${isToday ? 'today' : ''}`}>{d.getDate()}</span>
-          <button className="wv-col-add-task" onClick={() => setShowCreateTask(dateIso)} title="Nueva tarea">+✓</button>
-          <button className="wv-col-add-meeting" onClick={() => setShowCreateMeeting(dateIso)} title="Nueva reunión">+📅</button>
         </div>
+        {isSelected && (
+          <form className="wv-quick-add" onSubmit={e => quickAdd(e, dateIso)}>
+            <div className="wv-quick-types">
+              {QUICK_TYPES.map(t => (
+                <button
+                  key={t.key}
+                  type="button"
+                  className={`wv-quick-type ${quickType === t.key ? 'active' : ''}`}
+                  onClick={() => setQuickType(t.key)}
+                  title={t.label}
+                  aria-label={t.label}
+                  aria-pressed={quickType === t.key}
+                >{t.icon}</button>
+              ))}
+            </div>
+            <input
+              type="text"
+              className="wv-quick-input"
+              value={quickText}
+              onChange={e => setQuickText(e.target.value)}
+              placeholder={QUICK_TYPES.find(t => t.key === quickType).placeholder}
+            />
+          </form>
+        )}
         {labelText && (
           <div className="wv-col-label"><span>{labelText}</span></div>
         )}
@@ -349,6 +411,17 @@ export default function WeeklyView({ today, onReload, laborMap = {}, resetSignal
             }}
             onDrop={e => handleTaskDrop(e, dateIso, pending[0]?.id ?? null)}
           />
+          {events.map(ev => (
+            <div key={`ev-${ev.id}`} className={`wv-event ${ev.kind}`}>
+              <span>{ev.kind === 'delivery' ? '📦' : '📌'}</span>
+              <span className="wv-event-title">{ev.title}</span>
+              <button
+                className="wv-meeting-del"
+                onClick={async () => { await api.deleteEvent(ev.id); reloadAll(); }}
+                title="Eliminar"
+              >✕</button>
+            </div>
+          ))}
           {/* Meetings */}
           {meetings.length > 0 && (
             <div className="wv-meetings-section">
@@ -612,23 +685,6 @@ export default function WeeklyView({ today, onReload, laborMap = {}, resetSignal
         />
       )}
 
-      {/* Create Meeting Modal */}
-      {showCreateMeeting && (
-        <CreateMeetingModal
-          initialDate={showCreateMeeting}
-          onClose={() => setShowCreateMeeting(null)}
-          onCreated={reloadAll}
-        />
-      )}
-
-      {/* Create Task Modal */}
-      {showCreateTask && (
-        <CreateTaskModal
-          initialDate={showCreateTask}
-          onClose={() => setShowCreateTask(null)}
-          onCreated={reloadAll}
-        />
-      )}
     </div>
   );
 }
