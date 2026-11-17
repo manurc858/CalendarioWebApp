@@ -249,3 +249,22 @@
 }
 .wv-weekend-grid .wv-col { min-height: 120px; background: var(--bg-1); }
 
+
+.wv-quick-add { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+.wv-quick-types { display: flex; gap: 4px; }
+.wv-quick-type {
+  flex: 1; padding: 4px 0; border: 1px solid var(--line); border-radius: 8px;
+  background: transparent; cursor: pointer; font-size: 14px; line-height: 1.2;
+}
+.wv-quick-type.active { background: color-mix(in srgb, var(--accent) 15%, transparent); border-color: var(--accent); }
+.wv-quick-input {
+  width: 100%; box-sizing: border-box; padding: 5px 8px; font-size: 12.5px;
+  border: 1px solid var(--line); border-radius: 8px; background: transparent; color: inherit;
+}
+.wv-col-head { cursor: pointer; }
+.wv-event {
+  display: flex; align-items: center; gap: 6px; padding: 4px 8px; margin-bottom: 4px;
+  border-radius: 8px; font-size: 12px; background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.wv-event.delivery { background: color-mix(in srgb, #f59e0b 16%, transparent); }
+.wv-event-title { flex: 1; min-width: 0; overflow-wrap: anywhere; }
