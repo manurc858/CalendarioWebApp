@@ -205,6 +205,7 @@
 
   /* ---------- Vista semanal: columnas en vertical ---------- */
   .wv-layout { grid-template-columns: 1fr; }
+  .wv-day-panel { display: none; }
   .wv-grid { grid-template-columns: 1fr; gap: 10px; }
   .wv-col { min-height: unset; }
   .wv-weekend-grid {

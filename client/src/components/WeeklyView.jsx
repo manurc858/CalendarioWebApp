@@ -6,6 +6,7 @@ import CreateMeetingModal from './CreateMeetingModal.jsx';
 import CreateTaskModal from './CreateTaskModal.jsx';
 import FlowbiteDateInput from './FlowbiteDateInput.jsx';
 import TaskLabel from './TaskLabel.jsx';
+import DayDetailPanel from './DayDetailPanel.jsx';
 
 const DOW_SHORT = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 
@@ -75,12 +76,13 @@ function dedupeMeetingsForDay(meetings = []) {
   });
 }
 
-export default function WeeklyView({ today, onReload, laborMap = {}, resetSignal = 0 }) {
+export default function WeeklyView({ today, onReload, laborMap = {}, projects = [], resetSignal = 0 }) {
   const [weekOffset, setWeekOffset] = useState(0);
+  const [selectedDate, setSelectedDate] = useState(() => iso(today));
 
   // El orbe "Hoy" del dock móvil incrementa resetSignal: volver a la semana actual
   useEffect(() => {
-    if (resetSignal > 0) setWeekOffset(0);
+    if (resetSignal > 0) { setWeekOffset(0); setSelectedDate(iso(today)); }
   }, [resetSignal]);
   const [weekTodos, setWeekTodos] = useState({});
   const [weekMeetings, setWeekMeetings] = useState({});
@@ -101,6 +103,10 @@ export default function WeeklyView({ today, onReload, laborMap = {}, resetSignal
   const weekDays = getWeekDays(baseDate);
   const weekFrom = iso(weekDays[0]);
   const weekTo = iso(weekDays[6]);
+  // Si el día seleccionado no está en la semana visible, se usa el primero (o hoy)
+  const selectedIso = selectedDate >= weekFrom && selectedDate <= weekTo
+    ? selectedDate
+    : (todayIso >= weekFrom && todayIso <= weekTo ? todayIso : weekFrom);
 
   const loadTodos = useCallback(async () => {
     const todos = await api.listTodos({ from: weekFrom, to: weekTo });
@@ -321,10 +327,10 @@ export default function WeeklyView({ today, onReload, laborMap = {}, resetSignal
     return (
       <div
         key={dateIso}
-        className={`wv-col ${isToday ? 'today' : ''} ${isDrop ? 'drop-hover' : ''} ${isSpecial ? 'special' : ''} wv-col-${eff.type}`}
+        className={`wv-col ${isToday ? 'today' : ''} ${dateIso === selectedIso ? 'selected' : ''} ${isDrop ? 'drop-hover' : ''} ${isSpecial ? 'special' : ''} wv-col-${eff.type}`}
         title={labelText || ''}
         style={colStyle}
-        onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDropTarget(dateIso); }}
+        onClick={() => setSelectedDate(dateIso)}        onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDropTarget(dateIso); }}
         onDragLeave={() => setDropTarget(null)}
         onDrop={e => handleDrop(e, dateIso)}
       >
@@ -466,123 +472,22 @@ export default function WeeklyView({ today, onReload, laborMap = {}, resetSignal
         </div>
       </section>
 
-      {/* Main layout: left panel + weekday grid */}
+      {/* Main layout: weekday grid + selected day panel */}
       <div className="wv-layout">
-        {/* Left panel: create + unassigned + overdue */}
-        <div
-          className={`wv-panel ${dropTarget === 'unassign' ? 'drop-hover' : ''}`}
-          onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDropTarget('unassign'); }}
-          onDragLeave={() => setDropTarget(null)}
-          onDrop={handleDropUnassign}
-        >
-          {/* Creator (oculto en móvil: allí se usan los botones +✓ de cada día) */}
-          <div className="wv-panel-section wv-creator-section">
-            <div className="wv-panel-title">✏️ Nueva tarea</div>
-            <form className="wv-creator-form" onSubmit={addTodo}>
-              <input
-                type="text"
-                placeholder="Escribe una tarea..."
-                value={todoText}
-                onChange={e => setTodoText(e.target.value)}
-                className="wv-creator-input"
-              />
-              <FlowbiteDateInput
-                value={todoDate}
-                onValueChange={setTodoDate}
-                className="wv-creator-date"
-                title="Fecha (vacío = sin asignar)"
-                placeholder="Sin fecha"
-              />
-              <button type="submit" className="wv-creator-btn" disabled={!todoText.trim()}>+</button>
-            </form>
-          </div>
-
-          {/* Unassigned tasks */}
-          {unassigned.length > 0 && (
-            <div className="wv-panel-section">
-              <div className="wv-panel-title">📋 Sin asignar <span className="wv-panel-count">{unassigned.length}</span></div>
-              <div className="wv-panel-list">
-                <div
-                  className={`todo-drop-slot ${insertTarget === 'unassign:start' ? 'active' : ''}`}
-                  onDragOver={e => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    e.dataTransfer.dropEffect = 'move';
-                    setDropTarget('unassign');
-                    setInsertTarget('unassign:start');
-                  }}
-                  onDrop={e => handleTaskDrop(e, null, unassigned[0]?.id ?? null)}
-                />
-                {unassigned.map((t, idx) => (
-                  <div key={t.id}>
-                    <div
-                      className={`wv-panel-item ${insertTarget === `unassign:${t.id}` ? 'drop-before' : ''} ${insertTarget === `unassign:${unassigned[idx + 1]?.id ?? 'end'}` ? 'drop-after' : ''}`}
-                      draggable
-                      onDragStart={e => handleDragStart(e, t)}
-                      onDragOver={e => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        e.dataTransfer.dropEffect = 'move';
-                        const beforeId = getBeforeIdByPointer(e, t.id, unassigned[idx + 1]?.id);
-                        setDropTarget('unassign');
-                        setInsertTarget(`unassign:${beforeId ?? 'end'}`);
-                      }}
-                      onDrop={e => {
-                        const beforeId = getBeforeIdByPointer(e, t.id, unassigned[idx + 1]?.id);
-                        handleTaskDrop(e, null, beforeId);
-                      }}
-                    >
-                      <span className="wv-panel-item-text">{t.text}</span>
-                      <button className="btn-delete wv-task-del" onClick={() => deleteTodo(t.id)}>✕</button>
-                    </div>
-                  </div>
-                ))}
-                <div
-                  className={`todo-drop-slot ${insertTarget === 'unassign:end' ? 'active' : ''}`}
-                  onDragOver={e => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    e.dataTransfer.dropEffect = 'move';
-                    setDropTarget('unassign');
-                    setInsertTarget('unassign:end');
-                  }}
-                  onDrop={e => handleTaskDrop(e, null, null)}
-                />
-              </div>
-              <p className="wv-panel-hint">Arrastra a un día para asignar</p>
-            </div>
-          )}
-
-          {/* Overdue warning */}
-          {overdue.length > 0 && (
-            <div className="wv-panel-section wv-panel-overdue">
-              <div className="wv-panel-title wv-panel-warn">⚠️ No completadas <span className="wv-panel-count warn">{overdue.length}</span></div>
-              <div className="wv-panel-list">
-                {overdue.map(t => (
-                  <div key={t.id} className="wv-panel-item overdue" draggable onDragStart={e => handleDragStart(e, t)}>
-                    <div className="wv-panel-item-main">
-                      <span className="wv-panel-item-text">
-                        {t.text}
-                      </span>
-                      <span className="wv-panel-item-date">{t.date}</span>
-                    </div>
-                    <div className="wv-panel-item-actions">
-                      <button className="wv-panel-item-done" onClick={() => markDone(t.id)} title="Completar">✓</button>
-                      <button className="btn-carry-over wv-task-del" title="Pasar a hoy" onClick={() => carryOverTodo(t.id, todayIso)}>⏭</button>
-                      <button className="btn-delete wv-task-del" onClick={() => deleteTodo(t.id)}>✕</button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <p className="wv-panel-hint">Arrastra a un día para reasignar</p>
-            </div>
-          )}
-        </div>
-
-        {/* Right: week columns (Mon–Fri) */}
+        {/* Week columns (Mon–Fri) */}
         <div className="wv-grid">
           {weekDays.slice(0, 5).map((d, i) => renderCol(d, i))}
         </div>
+
+        <aside className="wv-day-panel">
+          <DayDetailPanel
+            key={selectedIso}
+            date={selectedIso}
+            laborMap={laborMap}
+            projects={projects}
+            onReload={reloadAll}
+          />
+        </aside>
       </div>
 
       {/* Collapsible weekend */}

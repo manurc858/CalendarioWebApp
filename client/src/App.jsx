@@ -553,6 +553,7 @@ export default function App({ onLogout = null }) {
                 today={today}
                 onReload={reloadMonth}
                 laborMap={laborMap}
+                projects={activeProjects}
                 resetSignal={todayTick}
               />
             )}

@@ -23,10 +23,17 @@
 
 /* Layout: panel left + grid right */
 .wv-layout {
-  display: grid; grid-template-columns: minmax(220px, 240px) minmax(0, 1fr); gap: 12px;
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 360px); gap: 12px;
   flex: 1; min-height: 0;
   align-items: stretch;
 }
+.wv-day-panel {
+  display: flex; flex-direction: column; align-self: stretch; min-height: 0; overflow-y: auto;
+  padding: 2px;
+}
+.wv-day-panel > .day-detail { flex: 1; }
+.wv-col.selected { outline: 2px solid var(--accent); outline-offset: -2px; }
+.wv-col { cursor: pointer; }
 
 /* Left panel */
 .wv-panel {

@@ -11,6 +11,7 @@
   padding: 16px 18px;
   border-bottom: 1px solid var(--line-2);
   background: var(--bg);
+  border-radius: var(--radius) var(--radius) 0 0;
 }
 .day-detail-date {
   font-weight: 700; font-size: 15px; color: var(--ink);
