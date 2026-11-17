@@ -138,12 +138,32 @@
 .work-entry-card .day-entry-time { gap: 2px; color: var(--ink); font-size: 15px; line-height: 1.15; }
 .work-entry-card .day-entry-time small { color: var(--muted); font-size: 11px; font-weight: 700; }
 .work-entry-card .day-entry-project { margin-top: 3px; color: var(--muted); font-size: 11px; }
+.work-entry-card .day-entry-actions .task-actions-menu { display: flex; align-items: center; }
+.work-entry-card .day-entry-actions .task-menu-trigger { width: 28px; height: 28px; border: 0; border-radius: 7px; background: transparent; color: #888; }
+.work-entry-card .day-entry-actions .task-menu-trigger:hover { background: var(--accent-soft); color: var(--fg); }
+.work-entry-card .day-entry-meeting-name { margin-top: 3px; color: var(--ink); font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.work-entry-meeting .day-entry-meeting-name + .day-entry-project { margin-top: 1px; }
 .work-entry-card .day-entry-actions { gap: 3px; }
 .work-entry-card .btn-edit,
 .work-entry-card .btn-delete,
 .work-entry-card .note-tri { width: 28px; height: 28px; border-radius: 7px; }
 .work-entry-card.note-open { align-items: flex-start; }
-.work-entry-card .day-entry-note { margin: 2px 0 2px 14px; padding: 8px 10px; border-radius: 8px; background: #f7f8fa; }
+.work-entry-card { row-gap: 0; }
+.work-entry-card .day-entry-note { margin: 2px 0; padding: 8px 10px; border-radius: 8px; background: #f7f8fa; display: block; width: auto; }
+
+/* Nota de las horas: despliegue animado (alto + fundido + ligero deslizamiento) */
+.work-entry-card .day-entry-note-wrap {
+  display: grid; grid-template-rows: 0fr; width: 100%; margin-left: 14px;
+  transition: grid-template-rows .3s cubic-bezier(.3, .9, .3, 1);
+}
+.work-entry-card.note-open .day-entry-note-wrap { grid-template-rows: 1fr; }
+.work-entry-card .day-entry-note-clip { overflow: hidden; min-height: 0; }
+.work-entry-card .day-entry-note { opacity: 0; transform: translateY(-6px); transition: opacity .2s ease, transform .3s cubic-bezier(.3, .9, .3, 1); }
+.work-entry-card.note-open .day-entry-note { opacity: 1; transform: none; transition-delay: .06s; }
+.work-entry-card .note-tri { transition: background .15s, transform .3s cubic-bezier(.3, .9, .3, 1); }
+@media (prefers-reduced-motion: reduce) {
+  .work-entry-card .day-entry-note-wrap, .work-entry-card .day-entry-note, .work-entry-card .note-tri { transition: none; }
+}
 .day-entry.drag-over {
   border-color: var(--accent);
   background-color: var(--bg-hover);
@@ -265,7 +285,7 @@ textarea.drag-over {
 }
 .work-add-form {
   display: flex; flex-direction: column; gap: 7px;
-  margin-top: 8px; padding: 9px;
+  margin: 0 0 8px; padding: 9px;
   border: 1px solid #e7e9ed; border-radius: 12px; background: #f8f9fa;
 }
 .work-add-row {
@@ -279,7 +299,8 @@ textarea.drag-over {
 }
 .work-hours-field:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .work-hours-field .hours-input { width: 100%; height: 34px; padding: 0 4px; border: 0; background: transparent; }
-.work-hours-field .hours-input:focus { border-color: transparent; }
+.work-hours-field .hours-input:focus,
+.work-hours-field .hours-input:focus-visible { border-color: transparent; outline: none !important; box-shadow: none; }
 .work-hours-field > span { font-size: 11px; font-weight: 700; }
 .work-add-form > .inline-textarea { min-height: 36px; padding: 8px 10px; border-radius: 9px; background: var(--bg-elev); }
 .inline-textarea {
@@ -289,7 +310,9 @@ textarea.drag-over {
   resize: none; overflow: hidden; min-height: 32px;
   transition: border-color .15s;
 }
-.inline-textarea:focus { border-color: var(--accent); }
+.inline-textarea:focus,
+.inline-textarea:focus-visible { border-color: var(--accent); outline: none !important; }
+.work-add-form > .inline-textarea:focus { box-shadow: 0 0 0 3px var(--accent-soft); }
 .inline-input {
   padding: 0 10px; border-radius: 8px; height: 32px; line-height: 32px;
   border: 1px solid var(--line); background: var(--bg);

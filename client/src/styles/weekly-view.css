@@ -32,6 +32,12 @@
   padding: 2px;
 }
 .wv-day-panel > .day-detail { flex: 1; }
+
+/* Resumen mensual bajo las horas */
+.wv-month-summary .year-month-card { box-shadow: none; content-visibility: visible; padding: 12px 14px; }
+.wv-month-summary-title { cursor: default; }
+.wv-month-summary-title:hover { color: var(--ink); }
+.year-day.wv-month-selected { outline: 2px solid var(--accent); outline-offset: 1px; z-index: 1; }
 .wv-col.selected { outline: 2px solid var(--accent); outline-offset: -2px; }
 .wv-col { cursor: pointer; }
 
@@ -185,8 +191,8 @@
 }
 .wv-task:hover { background: #efe3c4; border-color: #d9c891; box-shadow: var(--shadow-sm); }
 .wv-task:active { cursor: grabbing; }
-.wv-task.done { opacity: .5; }
-.wv-task.done .wv-task-text { text-decoration: line-through; }
+/* Las tareas hechas se quedan en su sitio, solo marcadas (sin tachado) */
+.wv-col .task-label-name.done { text-decoration: none; color: inherit; }
 .wv-col-body .todo-drop-slot,
 .wv-panel-list .todo-drop-slot {
   margin: 1px 0;
@@ -227,8 +233,6 @@
 .wv-task:hover .wv-task-del { opacity: .6; }
 .wv-task-del:hover { opacity: 1 !important; }
 
-.wv-done-section { margin-top: auto; border-top: 1px dashed var(--line); padding-top: 4px; display: flex; flex-direction: column; gap: 4px; }
-
 /* Collapsible weekend */
 .wv-weekend { margin-top: 8px; }
 .wv-weekend-toggle {
@@ -250,21 +254,104 @@
 .wv-weekend-grid .wv-col { min-height: 120px; background: var(--bg-1); }
 
 
-.wv-quick-add { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
-.wv-quick-types { display: flex; gap: 4px; }
-.wv-quick-type {
-  flex: 1; padding: 4px 0; border: 1px solid var(--line); border-radius: 8px;
-  background: transparent; cursor: pointer; font-size: 14px; line-height: 1.2;
+.wv-quick-add { display: flex; align-items: center; gap: 4px; padding: 8px 10px; border-bottom: 1px dashed var(--line); }
+.wv-quick-add:focus-within { border-bottom-color: var(--accent); }
+/* El círculo ocupa 26px en la fila; la pastilla se superpone y se alarga hacia la derecha */
+.wv-quick-type { position: relative; flex: 0 0 26px; width: 26px; height: 26px; }
+.wv-quick-pill {
+  position: absolute; top: 0; left: 0; z-index: 5; display: flex;
+  width: 26px; height: 26px; overflow: hidden; border-radius: 999px;
+  background: var(--bg-elev); box-shadow: 0 1px 4px rgba(0, 0, 0, .18);
+  transition: width .26s cubic-bezier(.3, .9, .3, 1), box-shadow .26s;
 }
-.wv-quick-type.active { background: color-mix(in srgb, var(--accent) 15%, transparent); border-color: var(--accent); }
+.wv-quick-type.open .wv-quick-pill {
+  width: calc(26px * (1 + var(--n)));
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .22);
+}
+.wv-quick-trigger, .wv-quick-option {
+  flex: 0 0 26px; width: 26px; height: 26px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 0; border-radius: 50%; background: transparent; color: inherit;
+  cursor: pointer; font-size: 14px; line-height: 1;
+}
+.wv-quick-option:hover { background: var(--line-2); }
+.wv-quick-option {
+  opacity: 0; transform: scale(.5);
+  transition: opacity .12s, transform .12s;
+}
+.wv-quick-type.open .wv-quick-option {
+  opacity: 1; transform: none;
+  transition: opacity .18s, transform .18s;
+  transition-delay: calc(70ms + var(--i) * 45ms);
+}
 .wv-quick-input {
-  width: 100%; box-sizing: border-box; padding: 5px 8px; font-size: 12.5px;
-  border: 1px solid var(--line); border-radius: 8px; background: transparent; color: inherit;
+  flex: 1; min-width: 0; box-sizing: border-box; padding: 4px 2px; font-size: 12.5px;
+  border: 0; outline: none; background: transparent; color: inherit;
 }
+/* Anula el aro morado global (a11y.css); el foco se indica con la línea discontinua */
+.wv-quick-input:focus-visible, .wv-quick-trigger:focus-visible, .wv-quick-option:focus-visible { outline: none !important; }
 .wv-col-head { cursor: pointer; }
-.wv-event {
-  display: flex; align-items: center; gap: 6px; padding: 4px 8px; margin-bottom: 4px;
-  border-radius: 8px; font-size: 12px; background: color-mix(in srgb, var(--accent) 10%, transparent);
+/* Elementos del día: tareas, eventos, entregas y reuniones comparten círculo + tarjeta */
+.wv-item { display: flex; align-items: center; gap: 6px; position: relative; }
+.wv-item:active { cursor: grabbing; }
+.wv-item .wv-meeting-att { flex: 0 0 20px; width: 20px; height: 20px; box-sizing: border-box; }
+/* Círculo de hecho/pendiente de eventos y entregas: mismo estilo que el de las tareas (gana a los estilos globales de checkbox) */
+.wv-item .wv-event-check {
+  appearance: none; -webkit-appearance: none; flex: 0 0 20px; width: 20px; height: 20px; margin: 0; padding: 0;
+  box-sizing: border-box; border: 1px solid #cfd5dc; border-radius: 50%; background: var(--bg-elev); cursor: pointer;
 }
-.wv-event.delivery { background: color-mix(in srgb, #f59e0b 16%, transparent); }
-.wv-event-title { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.wv-item .wv-event-check:checked {
+  border-color: #59616b;
+  background: #59616b url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23fff' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='3 8 6.5 11.5 13 5'/%3E%3C/svg%3E") center/12px no-repeat;
+}
+.wv-card {
+  flex: 1 1 0; min-width: 0; box-sizing: border-box; min-height: 44px;
+  display: flex; align-items: center; gap: 4px; padding: 7px 8px 7px 11px;
+  border: 1px solid #e7e9ed; border-radius: 14px; background: var(--bg-elev);
+  box-shadow: 0 4px 12px rgba(39, 45, 55, .1);
+}
+.wv-item.has-project .wv-card { border-left: 4px solid var(--meeting-color); }
+.wv-item.absent .wv-card { opacity: .55; }
+/* Hechos: tarjeta y círculo más transparentes */
+.wv-item.is-done .wv-card, .wv-item.is-done .task-label,
+.wv-item.is-done .wv-task-check, .wv-item.is-done .wv-event-check { opacity: .5; }
+.wv-card-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.wv-card-title {
+  font-size: 11px; font-weight: 600; line-height: 1.3; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow: hidden;
+}
+/* Máximo 3 líneas por elemento, después "…" */
+.wv-col .task-label:not(.task-label-expanded) .task-label-name,
+.wv-col .task-label-expanded .task-label-name {
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow: hidden;
+}
+.wv-card-icon { margin-right: 4px; }
+.wv-card-sub { font-size: 10px; color: var(--muted); }
+/* Tres puntos: igual que el de las tareas */
+.wv-card .task-actions-menu { display: flex; align-items: center; flex: 0 0 auto; }
+.wv-card .task-menu-trigger { width: 28px; height: 28px; border: 0; border-radius: 7px; background: var(--bg-elev); color: #888; }
+.wv-card .task-menu-trigger:hover { background: #f0f2f4; color: var(--fg); }
+
+/* Submenú desplegable animado (asignar proyecto) */
+.task-menu-panel { animation: item-menu-in .16s ease-out both; transform-origin: top right; }
+@keyframes item-menu-in { from { opacity: 0; transform: translateY(-4px) scale(.97); } to { opacity: 1; transform: none; } }
+.item-submenu > button { position: relative; }
+.item-submenu-caret { margin-left: auto; transition: transform .25s ease; }
+.item-submenu.open .item-submenu-caret { transform: rotate(180deg); }
+.item-submenu-body { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .28s cubic-bezier(.3, .9, .3, 1); }
+.item-submenu.open .item-submenu-body { grid-template-rows: 1fr; }
+.item-submenu-inner { overflow: hidden; min-height: 0; max-height: 220px; overflow-y: auto; margin-left: 12px; padding-left: 6px; border-left: 2px solid var(--line); }
+.task-menu-panel .item-submenu-option { min-height: 30px; padding: 5px 8px; font-size: 12.5px; opacity: 0; transform: translateX(-6px); transition: opacity .18s, transform .18s; }
+.item-submenu.open .item-submenu-option { opacity: 1; transform: none; transition-delay: calc(80ms + var(--i, 0) * 30ms); }
+.item-submenu-option.active { font-weight: 700; }
+.item-submenu-dot { flex: 0 0 10px; width: 10px; height: 10px; border-radius: 50%; background: #cbd5e1; }
+.item-submenu-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (prefers-reduced-motion: reduce) { .task-menu-panel, .item-submenu-body, .item-submenu-option { animation: none; transition: none; } }
+.wv-item.drop-before::before, .wv-item.drop-after::after {
+  content: ''; position: absolute; left: 6px; right: 6px; height: 2px; border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 78%, var(--bg-elev));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 35%, var(--bg-elev));
+  pointer-events: none;
+}
+.wv-item.drop-before::before { top: -3px; }
+.wv-item.drop-after::after { bottom: -3px; }

@@ -232,7 +232,6 @@
     font-size: 12px;
     padding: 4px 7px;
   }
-  .wv-meeting-notes-btn { opacity: 1; transition: none; }
 
   /* ---------- Vista mensual: solo el calendario; el día abre un sheet ---------- */
   .monthly-layout { grid-template-columns: 1fr; }

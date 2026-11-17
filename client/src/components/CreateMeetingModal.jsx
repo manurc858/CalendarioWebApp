@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { api } from '../api.js';
 import FlowbiteDateInput from './FlowbiteDateInput.jsx';
 
-export default function CreateMeetingModal({ initialDate, onClose, onCreated }) {
+export default function CreateMeetingModal({ initialDate, meetingId = null, onClose, onCreated }) {
+  const isEdit = meetingId != null;
   const dialogRef = useRef(null);
   const restoreFocusRef = useRef(null);
   const endTimeRef = useRef(null);
@@ -16,6 +17,24 @@ export default function CreateMeetingModal({ initialDate, onClose, onCreated }) 
   const [repeatUntil, setRepeatUntil] = useState('');
 
   useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
+
+  // En edición se carga la reunión base (sin expandir recurrencias)
+  useEffect(() => {
+    if (!isEdit) return;
+    let cancelled = false;
+    api.listCustomMeetings().then(rows => {
+      const m = rows.find(r => r.id === meetingId);
+      if (!m || cancelled) return;
+      setDate(m.date || '');
+      setTitle(m.title || '');
+      setStartTime(m.start_time || '');
+      setEndTime(m.end_time || '');
+      setAllDay(!!m.all_day);
+      setRepeatWeekly(m.repeat === 'weekly');
+      setRepeatUntil(m.repeat_until || '');
+    });
+    return () => { cancelled = true; };
+  }, [isEdit, meetingId]);
 
   useEffect(() => {
     const endInput = endTimeRef.current;
@@ -33,7 +52,7 @@ export default function CreateMeetingModal({ initialDate, onClose, onCreated }) 
     e.preventDefault();
     if (!e.currentTarget.reportValidity()) return;
 
-    await api.createCustomMeeting({
+    const payload = {
       date,
       title: title.trim(),
       start_time: allDay ? null : startTime || null,
@@ -41,7 +60,9 @@ export default function CreateMeetingModal({ initialDate, onClose, onCreated }) 
       all_day: allDay,
       repeat: repeatWeekly ? 'weekly' : 'none',
       repeat_until: repeatWeekly ? (repeatUntil || null) : null,
-    });
+    };
+    if (isEdit) await api.updateCustomMeeting(meetingId, payload);
+    else await api.createCustomMeeting(payload);
     onCreated?.();
     onCloseRef.current();
   };
@@ -75,7 +96,7 @@ export default function CreateMeetingModal({ initialDate, onClose, onCreated }) 
     <dialog ref={dialogRef} className="mn-editor-dialog" aria-labelledby="create-meeting-dialog-title">
       <div className="mn-editor mn-editor-sm">
         <div className="mn-editor-head">
-          <h3 id="create-meeting-dialog-title">📅 Nueva reunión</h3>
+          <h3 id="create-meeting-dialog-title">📅 {isEdit ? 'Editar reunión' : 'Nueva reunión'}</h3>
           <button type="button" className="btn btn-icon" onClick={() => onCloseRef.current()} aria-label="Cerrar modal">✕</button>
         </div>
         <form onSubmit={handleSubmit} className="cm-form">
@@ -160,7 +181,7 @@ export default function CreateMeetingModal({ initialDate, onClose, onCreated }) 
           )}
           <div className="mn-editor-foot">
             <button type="button" className="btn btn-ghost" onClick={onClose}>Cancelar</button>
-            <button type="submit" className="btn btn-primary" disabled={!title.trim() || !date}>Crear</button>
+            <button type="submit" className="btn btn-primary" disabled={!title.trim() || !date}>{isEdit ? 'Guardar' : 'Crear'}</button>
           </div>
         </form>
       </div>

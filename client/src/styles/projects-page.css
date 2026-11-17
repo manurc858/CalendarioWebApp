@@ -98,12 +98,51 @@
 .fb-dropdown-menu.hidden {
   display: none !important;
 }
+/* Popper posiciona el menú con transform inline, así que se anima el contenido interior */
+.fb-dropdown-menu:not(.hidden) {
+  animation: fb-dropdown-fade .16s ease-out;
+}
+.fb-dropdown-menu:not(.hidden) .fb-dropdown-list {
+  transform-origin: top center;
+  animation: fb-dropdown-pop .18s cubic-bezier(.2, .8, .2, 1);
+}
+.fb-dropdown-btn-icon {
+  transition: transform .2s ease;
+}
+.fb-dropdown:has(.fb-dropdown-menu:not(.hidden)) .fb-dropdown-btn-icon {
+  transform: rotate(180deg);
+}
+.fb-dropdown-menu:not(.hidden) .fb-dropdown-item {
+  animation: fb-dropdown-item-in .2s ease-out both;
+  animation-delay: calc(60ms + var(--i, 0) * 30ms);
+}
+@keyframes fb-dropdown-item-in {
+  from { opacity: 0; transform: translateX(-6px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes fb-dropdown-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes fb-dropdown-pop {
+  from { opacity: 0; transform: translateY(-6px) scaleY(.92); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fb-dropdown-menu:not(.hidden),
+  .fb-dropdown-menu:not(.hidden) .fb-dropdown-item,
+  .fb-dropdown-menu:not(.hidden) .fb-dropdown-list { animation: none; }
+  .fb-dropdown-btn-icon { transition: none; }
+}
 .fb-dropdown-list {
   list-style: none;
   margin: 0;
   padding: 6px;
 }
 .fb-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
   width: 100%;
   border: 0;
   background: transparent;
@@ -112,6 +151,19 @@
   padding: 7px 9px;
   border-radius: 8px;
   font-size: 13px;
+}
+.fb-dropdown-dot {
+  flex: 0 0 10px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+.fb-dropdown-item-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .fb-dropdown-item:hover {
   background: var(--line-2);

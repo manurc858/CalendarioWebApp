@@ -52,7 +52,7 @@ export default function FlowbiteDropdown({
           {options.map((opt) => {
             const isSelected = String(opt.value) === String(value);
             return (
-              <li key={String(opt.value)}>
+              <li key={String(opt.value)} style={{ '--i': options.indexOf(opt) }}>
                 <button
                   type="button"
                   role="option"
@@ -60,7 +60,8 @@ export default function FlowbiteDropdown({
                   className={`fb-dropdown-item ${isSelected ? 'active' : ''}`}
                   onClick={() => handleSelect(opt.value)}
                 >
-                  {opt.label}
+                  {'color' in opt ? <span className="fb-dropdown-dot" style={{ background: opt.color || '#cbd5e1' }} /> : null}
+                  <span className="fb-dropdown-item-label">{opt.label}</span>
                 </button>
               </li>
             );

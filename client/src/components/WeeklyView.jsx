@@ -1,10 +1,16 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { api } from '../api.js';
 import { iso, addDays, MONTH_NAMES, LABOR_TYPES, effectiveLabor } from '../utils.js';
 import MeetingNotesEditor from './MeetingNotesEditor.jsx';
 import FlowbiteDateInput from './FlowbiteDateInput.jsx';
 import TaskLabel from './TaskLabel.jsx';
 import DayDetailPanel from './DayDetailPanel.jsx';
+import CreateMeetingModal from './CreateMeetingModal.jsx';
+import QuickTypeDropdown from './QuickTypeDropdown.jsx';
+import ItemActionsMenu from './ItemActionsMenu.jsx';
+import EditEventModal from './EditEventModal.jsx';
+import WeeklyMonthSummary from './WeeklyMonthSummary.jsx';
+import { FileText, FolderKanban, Pencil, Trash2 } from 'lucide-react';
 
 const DOW_SHORT = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 
@@ -23,21 +29,23 @@ function getWeekDays(base) {
   return days;
 }
 
-function insertTodoAt(todos, draggedId, beforeId = null) {
-  const dragged = todos.find(todo => todo.id === draggedId);
-  if (!dragged) return todos;
-
-  const withoutDragged = todos.filter(todo => todo.id !== draggedId);
-  if (beforeId == null) return [...withoutDragged, dragged];
-
-  const insertIndex = withoutDragged.findIndex(todo => todo.id === beforeId);
-  if (insertIndex === -1) return [...withoutDragged, dragged];
-
-  return [
-    ...withoutDragged.slice(0, insertIndex),
-    dragged,
-    ...withoutDragged.slice(insertIndex),
+// Lista única del día: eventos, reuniones y tareas (hechas o no), con el orden manual guardado.
+// Los elementos sin orden guardado van al final en el orden por defecto (eventos, reuniones, tareas).
+function buildDayItems({ events = [], meetings = [], todos = [], order = [] }) {
+  const defaults = [
+    ...events.map(data => ({ key: `event-${data.id}`, type: 'event', data })),
+    ...meetings.map(data => ({ key: `meeting-${data.uid}`, type: 'meeting', data })),
+    ...todos.map(data => ({ key: `todo-${data.id}`, type: 'todo', data })),
   ];
+  const position = new Map(order.map((key, i) => [key, i]));
+  const items = [
+    ...defaults.filter(item => position.has(item.key)).sort((a, b) => position.get(a.key) - position.get(b.key)),
+    ...defaults.filter(item => !position.has(item.key)),
+  ];
+  // Las tareas mantienen su orden real (sort_order, el mismo del panel del día) dentro de los huecos que ocupan
+  const todoItems = defaults.filter(item => item.type === 'todo');
+  let n = 0;
+  return items.map(item => (item.type === 'todo' ? todoItems[n++] : item));
 }
 
 function removeTodoFromBuckets(buckets, todoId) {
@@ -92,10 +100,16 @@ export default function WeeklyView({ today, onReload, laborMap = {}, projects = 
   const [todoDate, setTodoDate] = useState('');
   const [weekendOpen, setWeekendOpen] = useState(false);
   const [notesEditor, setNotesEditor] = useState(null);
-  const [selectedDate, setSelectedDate] = useState(null);
+  const [editingMeetingId, setEditingMeetingId] = useState(null);
+  const [editingEvent, setEditingEvent] = useState(null);
   const [quickType, setQuickType] = useState('task');
   const [quickText, setQuickText] = useState('');
+  const quickInputRef = useRef(null);
   const [weekEvents, setWeekEvents] = useState({});
+  const [weekOrder, setWeekOrder] = useState({});
+  const [monthEventDates, setMonthEventDates] = useState(() => new Set());
+  const [monthHours, setMonthHours] = useState({});
+  const [monthTick, setMonthTick] = useState(0);
 
   const todayIso = iso(today);
   const baseDate = new Date(today);
@@ -147,6 +161,15 @@ export default function WeeklyView({ today, onReload, laborMap = {}, projects = 
     } catch { setWeekEvents({}); }
   }, [weekFrom, weekTo]);
 
+  const loadOrder = useCallback(async () => {
+    try {
+      const rows = await api.listDayOrder(weekFrom, weekTo);
+      const map = {};
+      rows.forEach(r => { (map[r.date] ||= []).push(r.item_key); });
+      setWeekOrder(map);
+    } catch { setWeekOrder({}); }
+  }, [weekFrom, weekTo]);
+
   const loadOverdue = useCallback(async () => {
     try { setOverdue(await api.overdueTodos(todayIso)); } catch { setOverdue([]); }
   }, [todayIso]);
@@ -156,16 +179,43 @@ export default function WeeklyView({ today, onReload, laborMap = {}, projects = 
   }, []);
 
   const reloadAll = useCallback(() => {
-    loadTodos(); loadMeetings(); loadEvents(); loadOverdue(); loadUnassigned(); onReload?.();
-  }, [loadTodos, loadMeetings, loadEvents, loadOverdue, loadUnassigned, onReload]);
+    loadTodos(); loadMeetings(); loadEvents(); loadOrder(); loadOverdue(); loadUnassigned(); onReload?.();
+    setMonthTick(t => t + 1);
+  }, [loadTodos, loadMeetings, loadEvents, loadOrder, loadOverdue, loadUnassigned, onReload]);
 
-  useEffect(() => { loadTodos(); loadMeetings(); loadEvents(); loadOverdue(); loadUnassigned(); }, [loadTodos, loadMeetings, loadEvents, loadOverdue, loadUnassigned]);
+  // Resumen mensual: eventos y horas registradas del mes del día seleccionado
+  const monthKey = selectedIso.slice(0, 7);
+  useEffect(() => {
+    const [y, m] = monthKey.split('-').map(Number);
+    const from = `${monthKey}-01`;
+    const to = `${monthKey}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`;
+    let alive = true;
+    api.listEvents({ from, to }).then(events => {
+      if (alive) setMonthEventDates(new Set((events || []).map(e => e.date)));
+    }).catch(() => {});
+    api.listWork({ from, to }).then(rows => {
+      if (!alive) return;
+      const map = {};
+      (rows || []).forEach(w => { if (w?.date) map[w.date] = (map[w.date] || 0) + (Number(w.hours) || 0); });
+      setMonthHours(map);
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, [monthKey, monthTick]);
+
+  const selectDay = useCallback((dayIso) => {
+    const monday = d => getWeekDays(d)[0];
+    const diff = monday(new Date(dayIso + 'T00:00:00')) - monday(today);
+    setWeekOffset(Math.round(diff / (7 * 24 * 3600 * 1000)));
+    setSelectedDate(dayIso);
+  }, [today]);
+
+  useEffect(() => { loadTodos(); loadMeetings(); loadEvents(); loadOrder(); loadOverdue(); loadUnassigned(); }, [loadTodos, loadMeetings, loadEvents, loadOrder, loadOverdue, loadUnassigned]);
 
   useEffect(() => {
     // Evita sondear la API mientras la pestaña está en segundo plano
     const poll = () => {
       if (document.hidden) return;
-      loadTodos(); loadMeetings(); loadEvents(); loadOverdue(); loadUnassigned();
+      loadTodos(); loadMeetings(); loadEvents(); loadOrder(); loadOverdue(); loadUnassigned();
     };
     const id = setInterval(poll, 5000);
     document.addEventListener('visibilitychange', poll);
@@ -173,7 +223,7 @@ export default function WeeklyView({ today, onReload, laborMap = {}, projects = 
       clearInterval(id);
       document.removeEventListener('visibilitychange', poll);
     };
-  }, [loadTodos, loadMeetings, loadEvents, loadOverdue, loadUnassigned]);
+  }, [loadTodos, loadMeetings, loadEvents, loadOrder, loadOverdue, loadUnassigned]);
 
   const QUICK_TYPES = [
     { key: 'task', icon: '✓', label: 'Tarea', placeholder: 'Nueva tarea…' },
@@ -189,12 +239,14 @@ export default function WeeklyView({ today, onReload, laborMap = {}, projects = 
     if (quickType === 'task') {
       await api.createTodo({ date: dateIso, text, extended: false, end_date: null, priority: 'normal' });
     } else if (quickType === 'meeting') {
+      // Inicio en la media hora o hora en punto más cercana; duración 1 h
       const now = new Date();
-      const pad = n => String(n).padStart(2, '0');
-      const start = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
-      const end = now.getHours() >= 23 ? '23:59' : `${pad(now.getHours() + 1)}:${pad(now.getMinutes())}`;
+      const nowMins = now.getHours() * 60 + now.getMinutes();
+      const startMins = Math.min(Math.round(nowMins / 30) * 30, 23 * 60 + 30);
+      const endMins = Math.min(startMins + 60, 23 * 60 + 59);
+      const fmt = mins => `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`;
       await api.createCustomMeeting({
-        date: dateIso, title: text, start_time: start, end_time: end,
+        date: dateIso, title: text, start_time: fmt(startMins), end_time: fmt(endMins),
         all_day: false, repeat: 'none', repeat_until: null,
       });
     } else {
@@ -204,121 +256,85 @@ export default function WeeklyView({ today, onReload, laborMap = {}, projects = 
     reloadAll();
   };
 
-  const handleDragStart = (e, todo) => {
-    e.dataTransfer.setData('application/x-todo-id', String(todo.id));
-    // Usar _displayDate para que el reordenamiento dentro del mismo día funcione correctamente
-    e.dataTransfer.setData('application/x-todo-date', todo._displayDate || todo.date || '');
-    e.dataTransfer.setData('text/plain', todo.text);
-    e.dataTransfer.effectAllowed = 'move';
+  const getDayItems = useCallback((dateIso) => buildDayItems({
+    events: weekEvents[dateIso] || [],
+    meetings: weekMeetings[dateIso] || [],
+    todos: weekTodos[dateIso] || [],
+    order: weekOrder[dateIso] || [],
+  }), [weekEvents, weekMeetings, weekTodos, weekOrder]);
+
+  const startItemDrag = (e, item, dateIso) => {
+    const dt = e.dataTransfer;
+    dt.setData('application/x-item-key', item.key);
+    dt.setData('application/x-item-date', dateIso);
+    if (item.type === 'todo') {
+      dt.setData('application/x-todo-id', String(item.data.id));
+      // _displayDate: la columna donde se arrastra (puede ser una continuación multi-día)
+      dt.setData('application/x-todo-date', item.data._displayDate || item.data.date || '');
+    }
+    dt.setData('text/plain', item.data.text || item.data.title || '');
+    dt.effectAllowed = 'move';
   };
 
-  const getBucketTodos = useCallback((dateIso) => {
-    if (dateIso == null) return unassigned;
-    return weekTodos[dateIso] || [];
-  }, [unassigned, weekTodos]);
-
-  const reorderBucket = useCallback(async (dateIso, todoId, beforeId = null) => {
-    // Solo incluir tareas cuya fecha de inicio coincide con el bucket (excluir continuaciones multi-día)
-    const bucketOwned = getBucketTodos(dateIso).filter(t => t.date === dateIso || dateIso == null);
-    const orderedIds = insertTodoAt(bucketOwned, todoId, beforeId).map(todo => todo.id);
-    if (orderedIds.length === 0) return;
-    await api.reorderTodos(dateIso, orderedIds);
-  }, [getBucketTodos]);
-
-  const moveTodo = useCallback(async (todoId, targetDate, beforeId = null, sourceDate = undefined) => {
-    const normalizedSource = sourceDate === '' ? null : sourceDate;
-    const normalizedTarget = targetDate === '' ? null : targetDate;
-    const sourceTodos = getBucketTodos(normalizedSource);
-    const movedTodo = sourceTodos.find(todo => todo.id === todoId);
-
-    if (!movedTodo) return;
-
-    if (normalizedSource === normalizedTarget) {
-      const reordered = insertTodoAt(sourceTodos, todoId, beforeId);
-      if (normalizedTarget == null) {
-        setUnassigned(reordered);
-      } else {
-        setWeekTodos(prev => ({ ...prev, [normalizedTarget]: reordered }));
-      }
-
-      try {
-        await reorderBucket(normalizedTarget, todoId, beforeId);
-      } catch {
-        reloadAll();
-        return;
-      }
-
-      reloadAll();
-      return;
-    }
-
-    const targetTodos = getBucketTodos(normalizedTarget);
-    const movedTodoNext = { ...movedTodo, date: normalizedTarget };
-    const nextTargetTodos = insertTodoAt([...targetTodos, movedTodoNext], todoId, beforeId);
-
-    if (normalizedSource == null) {
-      setUnassigned(prev => prev.filter(todo => todo.id !== todoId));
-    } else {
-      setWeekTodos(prev => removeTodoFromBuckets(prev, todoId));
-    }
-
-    if (normalizedTarget == null) {
-      setUnassigned(nextTargetTodos);
-    } else {
-      setWeekTodos(prev => ({
-        ...prev,
-        [normalizedTarget]: nextTargetTodos,
-      }));
-    }
-
-    try {
-      await api.updateTodo(todoId, { date: normalizedTarget });
-
-      const remainingSourceIds = sourceTodos.filter(todo => todo.id !== todoId).map(todo => todo.id);
-      if (remainingSourceIds.length > 0) {
-        await api.reorderTodos(normalizedSource, remainingSourceIds);
-      }
-
-      const orderedTargetIds = nextTargetTodos.map(todo => todo.id);
-      if (orderedTargetIds.length > 0) {
-        await api.reorderTodos(normalizedTarget, orderedTargetIds);
-      }
-    } catch {
-      reloadAll();
-      return;
-    }
-
-    reloadAll();
-  }, [getBucketTodos, reloadAll, reorderBucket]);
-
-  const handleTaskDrop = async (e, targetDate, beforeId = null) => {
+  // Suelta cualquier elemento (tarea, evento, entrega o reunión) en un día, antes de `beforeKey`
+  const dropItem = async (e, targetDate, beforeKey = null) => {
     e.preventDefault();
     e.stopPropagation();
     setDropTarget(null);
     setInsertTarget(null);
-    const todoId = e.dataTransfer.getData('application/x-todo-id');
-    const sourceDate = e.dataTransfer.getData('application/x-todo-date');
-    if (todoId) {
-      await moveTodo(Number(todoId), targetDate, beforeId, sourceDate);
+    const dt = e.dataTransfer;
+    let key = dt.getData('application/x-item-key');
+    let sourceDate = dt.getData('application/x-item-date');
+    const legacyTodoId = dt.getData('application/x-todo-id');
+    if (!key && legacyTodoId) {
+      // arrastre desde el panel del día u otras vistas, que solo envían la tarea
+      key = `todo-${legacyTodoId}`;
+      sourceDate = dt.getData('application/x-todo-date');
     }
-  };
+    if (!key || key === beforeKey) return;
 
-  const handleDrop = async (e, dateIso) => {
-    e.preventDefault();
-    setDropTarget(null);
-    setInsertTarget(null);
-    const todoId = e.dataTransfer.getData('application/x-todo-id');
-    const sourceDate = e.dataTransfer.getData('application/x-todo-date');
-    if (todoId) await moveTodo(Number(todoId), dateIso, null, sourceDate);
-  };
+    const dash = key.indexOf('-');
+    const type = key.slice(0, dash);
+    const id = Number(key.slice(dash + 1));
+    const sameDay = sourceDate === targetDate;
+    if (!sameDay && type === 'meeting') return; // las reuniones no cambian de día
 
-  const handleDropUnassign = async (e) => {
-    e.preventDefault();
-    setDropTarget(null);
-    setInsertTarget(null);
-    const todoId = e.dataTransfer.getData('application/x-todo-id');
-    const sourceDate = e.dataTransfer.getData('application/x-todo-date');
-    if (todoId) await moveTodo(Number(todoId), null, null, sourceDate);
+    const base = getDayItems(targetDate).map(item => item.key).filter(k => k !== key);
+    const at = beforeKey ? base.indexOf(beforeKey) : -1;
+    if (at === -1) base.push(key); else base.splice(at, 0, key);
+
+    const sourceTodos = type === 'todo' ? (sourceDate ? weekTodos[sourceDate] : unassigned) : null;
+    const movedTodo = sourceTodos?.find(t => t.id === id) ?? null;
+    const movedEvent = type === 'event' ? (weekEvents[sourceDate] || []).find(ev => ev.id === id) : null;
+
+    setWeekOrder(prev => ({ ...prev, [targetDate]: base }));
+    if (type === 'todo') {
+      const rank = new Map(base.filter(k => k.startsWith('todo-')).map((k, i) => [Number(k.slice(5)), i]));
+      if (!sameDay && !sourceDate) setUnassigned(prev => prev.filter(t => t.id !== id));
+      setWeekTodos(prev => {
+        let next = prev;
+        if (!sameDay && movedTodo) {
+          next = removeTodoFromBuckets(prev, id);
+          next = { ...next, [targetDate]: [...(next[targetDate] || []), { ...movedTodo, date: targetDate, _displayDate: targetDate }] };
+        }
+        const list = [...(next[targetDate] || [])].sort((a, b) => (rank.get(a.id) ?? 1e6) - (rank.get(b.id) ?? 1e6));
+        return { ...next, [targetDate]: list };
+      });
+    }
+
+    try {
+      if (!sameDay && type === 'todo') await api.updateTodo(id, { date: targetDate });
+      if (!sameDay && movedEvent) await api.updateEvent(id, { date: targetDate, title: movedEvent.title, kind: movedEvent.kind });
+      await api.setDayOrder(targetDate, base);
+      if (type === 'todo') {
+        // reorderTodos exige exactamente las tareas que empiezan ese día (las continuaciones multi-día no cuentan)
+        const targetTodos = weekTodos[targetDate] || [];
+        const owned = base.filter(k => k.startsWith('todo-')).map(k => Number(k.slice(5)))
+          .filter(tid => (tid === id && !sameDay) || targetTodos.some(t => t.id === tid && t.date === targetDate));
+        await api.reorderTodos(targetDate, owned);
+      }
+    } catch { /* se recarga el estado real justo debajo */ }
+    reloadAll();
   };
 
   const markDone = async (id) => { await api.updateTodo(id, { done: 1 }); reloadAll(); };
@@ -349,13 +365,9 @@ export default function WeeklyView({ today, onReload, laborMap = {}, projects = 
   const renderCol = (d, i) => {
     const dateIso = iso(d);
     const isToday = dateIso === todayIso;
-    const todos = weekTodos[dateIso] || [];
-    const meetings = weekMeetings[dateIso] || [];
-    const events = weekEvents[dateIso] || [];
-    const isSelected = (selectedDate ?? (weekDays.some(w => iso(w) === todayIso) ? todayIso : null)) === dateIso;
+    const items = getDayItems(dateIso);
+    const isSelected = dateIso === selectedIso;
     const isDrop = dropTarget === dateIso;
-    const pending = todos.filter(t => !t.done);
-    const done = todos.filter(t => t.done);
     const eff = effectiveLabor(d, laborMap);
     const laborInfo = LABOR_TYPES[eff.type];
     const isSpecial = eff.type !== 'laborable';
@@ -364,15 +376,162 @@ export default function WeeklyView({ today, onReload, laborMap = {}, projects = 
       ? { '--day-color': laborInfo.color, '--day-text': laborInfo.text }
       : undefined;
 
+    // Contenido de cada tipo: círculo a la izquierda + tarjeta con el mismo aspecto
+    const renderItemBody = (item) => {
+      if (item.type === 'todo') {
+        const t = item.data;
+        return (
+          <>
+            <input
+              type="checkbox"
+              checked={!!t.done}
+              onChange={() => (t.done ? unmarkDone(t.id) : markDone(t.id))}
+              className="wv-task-check"
+            />
+            <TaskLabel todo={t} compact={dateIso !== todayIso} onChanged={() => { loadTodos(); loadOverdue(); onReload?.(); }} />
+          </>
+        );
+      }
+      if (item.type === 'event') {
+        const ev = item.data;
+        const isDelivery = ev.kind === 'delivery';
+        return (
+          <>
+            <input
+              type="checkbox"
+              checked={!!ev.done}
+              onChange={async () => { await api.updateEvent(ev.id, { done: ev.done ? 0 : 1 }); reloadAll(); }}
+              className="wv-event-check"
+              aria-label={ev.done ? 'Marcar como pendiente' : 'Marcar como hecho'}
+            />
+            <div className="wv-card">
+              <div className="wv-card-main">
+                <span className="wv-card-title" title={ev.title}>
+                  <span className="wv-card-icon" aria-hidden="true">{isDelivery ? '📦' : '📌'}</span>
+                  {ev.title}
+                </span>
+                <span className="wv-card-sub">{isDelivery ? 'Entrega' : 'Evento'}</span>
+              </div>
+              <ItemActionsMenu
+                ariaLabel={isDelivery ? 'Opciones de entrega' : 'Opciones de evento'}
+                actions={[
+                  { label: 'Editar', icon: Pencil, onClick: () => setEditingEvent(ev) },
+                  { label: 'Eliminar', icon: Trash2, danger: true, onClick: async () => { await api.deleteEvent(ev.id); reloadAll(); } },
+                ]}
+              />
+            </div>
+          </>
+        );
+      }
+      const m = item.data;
+      const absent = m.attending === false || m.attending === 0;
+      const meetingType = m.isCustom ? 'custom' : 'outlook';
+      const meetingRef = m.isCustom ? String(m.customId) : m.uid;
+      return (
+        <>
+          {/* círculo check/cancel de asistencia */}
+          {!m.isCustom ? (
+            <button
+              type="button"
+              className={`wv-meeting-att ${absent ? 'absent' : 'attending'}`}
+              onClick={async () => {
+                await api.setMeetingAttendance(m.uid, dateIso, absent);
+                reloadAll();
+              }}
+              title={absent ? 'Marcar como asisto' : 'Marcar como no asisto'}
+            />
+          ) : (
+            <span className="wv-meeting-att attending" style={{ pointerEvents: 'none' }} />
+          )}
+          <div className="wv-card">
+            <div className="wv-card-main">
+              <span className="wv-card-title" title={m.title}>
+                <span className="wv-card-icon" aria-hidden="true">📅</span>
+                {m.repeat === 'weekly' && <span className="meeting-recurring-badge" title="Se repite cada semana">↻ </span>}
+                {m.title}
+              </span>
+              <span className="wv-card-sub">
+                {m.allDay ? 'Todo el día' : `${m.startTime || ''}${m.endTime ? `–${m.endTime}` : ''}`}
+              </span>
+            </div>
+            <ItemActionsMenu
+              ariaLabel="Opciones de reunión"
+              actions={[
+                {
+                  label: 'Asignar proyecto',
+                  icon: FolderKanban,
+                  submenu: [
+                    ...(m.project_id ? [{ key: 'none', label: 'Sin proyecto', onClick: async () => { await api.setMeetingProject(m.uid, dateIso, null); reloadAll(); } }] : []),
+                    ...projects.map((p, i) => ({
+                      key: p.id, label: p.name, color: p.color, active: p.id === m.project_id, index: i,
+                      onClick: async () => { await api.setMeetingProject(m.uid, dateIso, p.id); reloadAll(); },
+                    })),
+                  ],
+                },
+                { label: 'Notas', icon: FileText, onClick: () => setNotesEditor({ meetingType, meetingRef, meetingDate: dateIso, meetingTitle: m.title }) },
+                ...(m.isCustom ? [
+                  { label: 'Editar', icon: Pencil, onClick: () => setEditingMeetingId(m.customId) },
+                  {
+                    label: 'Eliminar', icon: Trash2, danger: true,
+                    onClick: async () => {
+                      if (m.repeat === 'weekly' && !confirm('Esta reunión se repite cada semana. Se eliminará la serie completa. ¿Continuar?')) return;
+                      await api.deleteCustomMeeting(m.customId);
+                      reloadAll();
+                    },
+                  },
+                ] : []),
+              ]}
+            />
+          </div>
+        </>
+      );
+    };
+
+    const renderItem = (item, idx) => {
+      const nextKey = items[idx + 1]?.key ?? null;
+      const m = item.type === 'meeting' ? item.data : null;
+      const absent = m && (m.attending === false || m.attending === 0);
+      const className = [
+        'wv-item', `wv-item-${item.type}`,
+        item.type === 'todo' ? 'wv-task' : '',
+        item.data.done ? 'is-done' : '',
+        m?.project_color ? 'has-project' : '',
+        absent ? 'absent' : '',
+        insertTarget === `${dateIso}:${item.key}` ? 'drop-before' : '',
+        insertTarget === `${dateIso}:${nextKey ?? 'end'}` ? 'drop-after' : '',
+      ].filter(Boolean).join(' ');
+      return (
+        <div
+          key={item.key}
+          className={className}
+          style={m ? { '--meeting-color': m.project_color || (m.isCustom ? '#a78bfa' : '#94a3b8') } : undefined}
+          draggable
+          onDragStart={e => startItemDrag(e, item, dateIso)}
+          onDragOver={e => {
+            e.preventDefault();
+            e.stopPropagation();
+            e.dataTransfer.dropEffect = 'move';
+            const beforeKey = getBeforeIdByPointer(e, item.key, nextKey);
+            setDropTarget(dateIso);
+            setInsertTarget(`${dateIso}:${beforeKey ?? 'end'}`);
+          }}
+          onDrop={e => dropItem(e, dateIso, getBeforeIdByPointer(e, item.key, nextKey))}
+        >
+          {renderItemBody(item)}
+        </div>
+      );
+    };
+
     return (
       <div
         key={dateIso}
         className={`wv-col ${isToday ? 'today' : ''} ${dateIso === selectedIso ? 'selected' : ''} ${isDrop ? 'drop-hover' : ''} ${isSpecial ? 'special' : ''} wv-col-${eff.type}`}
         title={labelText || ''}
         style={colStyle}
-        onClick={() => setSelectedDate(dateIso)}        onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDropTarget(dateIso); }}
+        onClick={() => setSelectedDate(dateIso)}
+        onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDropTarget(dateIso); }}
         onDragLeave={() => setDropTarget(null)}
-        onDrop={e => handleDrop(e, dateIso)}
+        onDrop={e => dropItem(e, dateIso, null)}
       >
         <div className="wv-col-head" onClick={() => setSelectedDate(dateIso)}>
           <span className="wv-col-dow">{DOW_SHORT[i]}</span>
@@ -380,20 +539,14 @@ export default function WeeklyView({ today, onReload, laborMap = {}, projects = 
         </div>
         {isSelected && (
           <form className="wv-quick-add" onSubmit={e => quickAdd(e, dateIso)}>
-            <div className="wv-quick-types">
-              {QUICK_TYPES.map(t => (
-                <button
-                  key={t.key}
-                  type="button"
-                  className={`wv-quick-type ${quickType === t.key ? 'active' : ''}`}
-                  onClick={() => setQuickType(t.key)}
-                  title={t.label}
-                  aria-label={t.label}
-                  aria-pressed={quickType === t.key}
-                >{t.icon}</button>
-              ))}
-            </div>
+            <QuickTypeDropdown
+              types={QUICK_TYPES}
+              value={quickType}
+              onChange={setQuickType}
+              onSelected={() => quickInputRef.current?.focus()}
+            />
             <input
+              ref={quickInputRef}
               type="text"
               className="wv-quick-input"
               value={quickText}
@@ -415,108 +568,9 @@ export default function WeeklyView({ today, onReload, laborMap = {}, projects = 
               setDropTarget(dateIso);
               setInsertTarget(`${dateIso}:start`);
             }}
-            onDrop={e => handleTaskDrop(e, dateIso, pending[0]?.id ?? null)}
+            onDrop={e => dropItem(e, dateIso, items[0]?.key ?? null)}
           />
-          {events.map(ev => (
-            <div key={`ev-${ev.id}`} className={`wv-event ${ev.kind}`}>
-              <span>{ev.kind === 'delivery' ? '📦' : '📌'}</span>
-              <span className="wv-event-title">{ev.title}</span>
-              <button
-                className="wv-meeting-del"
-                onClick={async () => { await api.deleteEvent(ev.id); reloadAll(); }}
-                title="Eliminar"
-              >✕</button>
-            </div>
-          ))}
-          {/* Meetings */}
-          {meetings.length > 0 && (
-            <div className="wv-meetings-section">
-              {meetings.map(m => {
-                const meetingType = m.isCustom ? 'custom' : 'outlook';
-                const meetingRef = m.isCustom ? String(m.customId) : m.uid;
-                return (
-                  <div key={`${m.uid}|${m.date}|${m.startTime || ''}|${m.endTime || ''}|${m.title || ''}`}
-                    className={`wv-meeting ${m.isCustom ? 'custom' : ''} ${m.attending === false || m.attending === 0 ? 'absent' : ''}`}
-                    style={{ '--meeting-color': m.project_color || (m.isCustom ? '#a78bfa' : '#94a3b8') }}
-                  >
-                    {/* círculo check/cancel de asistencia */}
-                    {!m.isCustom ? (
-                      <button
-                        className={`wv-meeting-att ${m.attending === false || m.attending === 0 ? 'absent' : 'attending'}`}
-                        onClick={async () => {
-                          await api.setMeetingAttendance(m.uid, dateIso, m.attending === false || m.attending === 0);
-                          reloadAll();
-                        }}
-                        title={m.attending === false || m.attending === 0 ? 'Marcar como asisto' : 'Marcar como no asisto'}
-                      />
-                    ) : (
-                      <span className="wv-meeting-att attending" style={{ pointerEvents: 'none' }} />
-                    )}
-                    <div className="wv-meeting-info">
-                      <span className="wv-meeting-title">
-                        {m.repeat === 'weekly' && <span className="meeting-recurring-badge" title="Se repite cada semana">↻ </span>}
-                        {m.title}
-                      </span>
-                      <span className="wv-meeting-time">
-                        {m.allDay ? 'Todo el día' : `${m.startTime || ''}${m.endTime ? `–${m.endTime}` : ''}`}
-                      </span>
-                    </div>
-                    <button
-                      className="wv-meeting-notes-btn"
-                      onClick={() => setNotesEditor({ meetingType, meetingRef, meetingDate: dateIso, meetingTitle: m.title })}
-                      title="Notas"
-                    >📝</button>
-                    {m.isCustom && (
-                      <button
-                        className="wv-meeting-del"
-                        onClick={async () => {
-                          if (m.repeat === 'weekly' && !confirm('Esta reunión se repite cada semana. Se eliminará la serie completa. ¿Continuar?')) return;
-                          await api.deleteCustomMeeting(m.customId);
-                          reloadAll();
-                        }}
-                        title="Eliminar"
-                      >✕</button>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-          {/* Tasks */}
-          {pending.map((t, idx) => (
-            <div key={t.id}>
-              <div
-                className={`wv-task ${insertTarget === `${dateIso}:${t.id}` ? 'drop-before' : ''} ${insertTarget === `${dateIso}:${pending[idx + 1]?.id ?? 'end'}` ? 'drop-after' : ''}`}
-                draggable
-                onDragStart={e => handleDragStart(e, t)}
-                onDragOver={e => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  e.dataTransfer.dropEffect = 'move';
-                  const beforeId = getBeforeIdByPointer(e, t.id, pending[idx + 1]?.id);
-                  setDropTarget(dateIso);
-                  setInsertTarget(`${dateIso}:${beforeId ?? 'end'}`);
-                }}
-                onDrop={e => {
-                  const beforeId = getBeforeIdByPointer(e, t.id, pending[idx + 1]?.id);
-                  handleTaskDrop(e, dateIso, beforeId);
-                }}
-              >
-                <input type="checkbox" checked={false} onChange={() => markDone(t.id)} className="wv-task-check" />
-                <TaskLabel todo={t} compact={dateIso !== todayIso} onChanged={() => { loadTodos(); loadOverdue(); onReload?.(); }} />
-              </div>
-            </div>
-          ))}
-          {done.length > 0 && (
-            <div className="wv-done-section">
-              {done.map(t => (
-                <div key={t.id} className="wv-task done">
-                  <input type="checkbox" checked onChange={() => unmarkDone(t.id)} className="wv-task-check" />
-                  <TaskLabel todo={t} onChanged={() => { loadTodos(); loadOverdue(); onReload?.(); }} />
-                </div>
-              ))}
-            </div>
-          )}
+          {items.map(renderItem)}
           <div
             className={`todo-drop-slot ${insertTarget === `${dateIso}:end` ? 'active' : ''}`}
             onDragOver={e => {
@@ -526,7 +580,7 @@ export default function WeeklyView({ today, onReload, laborMap = {}, projects = 
               setDropTarget(dateIso);
               setInsertTarget(`${dateIso}:end`);
             }}
-            onDrop={e => handleTaskDrop(e, dateIso, null)}
+            onDrop={e => dropItem(e, dateIso, null)}
           />
         </div>
       </div>
@@ -559,6 +613,21 @@ export default function WeeklyView({ today, onReload, laborMap = {}, projects = 
             laborMap={laborMap}
             projects={projects}
             onReload={reloadAll}
+            showTasksAndEvents={false}
+            showMeetings={false}
+            meetingsAsHours
+            refreshKey={(weekMeetings[selectedIso] || []).map(m => `${m.uid}|${m.attending}|${m.project_id ?? ''}|${m.startTime}|${m.endTime}|${m.title}`).join(';')}
+            afterWork={
+              <WeeklyMonthSummary
+                monthIso={monthKey}
+                selectedIso={selectedIso}
+                todayIso={todayIso}
+                laborMap={laborMap}
+                eventDates={monthEventDates}
+                hoursByDay={monthHours}
+                onSelect={selectDay}
+              />
+            }
           />
         </aside>
       </div>
@@ -587,6 +656,22 @@ export default function WeeklyView({ today, onReload, laborMap = {}, projects = 
           meetingTitle={notesEditor.meetingTitle}
           projectName={notesEditor.projectName}
           onClose={() => setNotesEditor(null)}
+        />
+      )}
+
+      {editingEvent && (
+        <EditEventModal
+          event={editingEvent}
+          onClose={() => setEditingEvent(null)}
+          onSaved={reloadAll}
+        />
+      )}
+
+      {editingMeetingId != null && (
+        <CreateMeetingModal
+          meetingId={editingMeetingId}
+          onClose={() => setEditingMeetingId(null)}
+          onCreated={reloadAll}
         />
       )}
 

@@ -416,12 +416,37 @@ app.post('/api/events', ah(async (req, res) => {
   res.json({ id: info.lastInsertRowid });
 }));
 app.put('/api/events/:id', ah(async (req, res) => {
-  const { date, title, kind } = req.body;
-  await dbRun('UPDATE events SET date=?, title=?, kind=? WHERE id=?', date, title, kind, Number(req.params.id));
+  const id = Number(req.params.id);
+  const current = await dbGet('SELECT * FROM events WHERE id=?', id);
+  if (!current) return res.status(404).json({ error: 'not found' });
+  const { date, title, kind, done } = req.body;
+  await dbRun('UPDATE events SET date=?, title=?, kind=?, done=? WHERE id=?',
+    date ?? current.date, title ?? current.title, kind ?? current.kind,
+    done === undefined ? current.done : (done ? 1 : 0), id);
   res.json({ ok: true });
 }));
 app.delete('/api/events/:id', ah(async (req, res) => {
   await dbRun('DELETE FROM events WHERE id=?', Number(req.params.id));
+  res.json({ ok: true });
+}));
+
+// -------- Orden manual de elementos de un día (tareas, eventos, reuniones) --------
+// item_key: todo-<id> | event-<id> | meeting-<uid>
+app.get('/api/day-order', ah(async (req, res) => {
+  const { from, to } = req.query;
+  if (!from || !to) return res.status(400).json({ error: 'from/to required' });
+  res.json(await dbAll('SELECT date, item_key, sort_order FROM day_item_order WHERE date BETWEEN ? AND ? ORDER BY date, sort_order', from, to));
+}));
+app.put('/api/day-order', ah(async (req, res) => {
+  const { date, keys } = req.body;
+  if (!date || !Array.isArray(keys) || keys.length > 500 || keys.some(k => typeof k !== 'string' || !k)) {
+    return res.status(400).json({ error: 'date and keys[] required' });
+  }
+  const unique = [...new Set(keys)];
+  await dbRun('DELETE FROM day_item_order WHERE date=?', date);
+  for (let i = 0; i < unique.length; i++) {
+    await dbRun('INSERT INTO day_item_order(date, item_key, sort_order) VALUES(?,?,?)', date, unique[i], i + 1);
+  }
   res.json({ ok: true });
 }));
 

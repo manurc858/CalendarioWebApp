@@ -82,6 +82,10 @@ export const api = {
   updateEvent: (id, data) => req(`/events/${id}`, { method: 'PUT', body: data }),
   deleteEvent: (id) => req(`/events/${id}`, { method: 'DELETE' }),
 
+  // orden manual de los elementos de cada día
+  listDayOrder: (from, to) => req(`/day-order?${new URLSearchParams({ from, to })}`),
+  setDayOrder: (date, keys) => req('/day-order', { method: 'PUT', body: { date, keys } }),
+
   // labor
   listLabor: (from, to) => req(`/labor?${new URLSearchParams({ from, to })}`),
   setLabor: (date, data) => req(`/labor/${date}`, { method: 'PUT', body: data }),

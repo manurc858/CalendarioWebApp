@@ -1,11 +1,12 @@
 import { useEffect, useState, useRef } from 'react';
-import { ChevronRight, Clock3, Pencil, Plus, X } from 'lucide-react';
+import { ChevronRight, Clock3, FileText, FolderKanban, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { api } from '../api.js';
 import { fmtHours, LABOR_TYPES, effectiveLabor, calcMeetingHours, iso, addDays } from '../utils.js';
 import MeetingNotesEditor from './MeetingNotesEditor.jsx';
 import CreateMeetingModal from './CreateMeetingModal.jsx';
 import FlowbiteDropdown from './FlowbiteDropdown.jsx';
 import TaskLabel from './TaskLabel.jsx';
+import ItemActionsMenu from './ItemActionsMenu.jsx';
 
 function insertTodoAt(todos, draggedId, beforeId = null) {
   const dragged = todos.find(todo => todo.id === draggedId);
@@ -30,7 +31,7 @@ function getBeforeIdByPointer(event, currentId, nextId) {
   return ratio <= 0.5 ? currentId : (nextId ?? null);
 }
 
-export default function DayDetailPanel({ date, laborMap, projects, onReload }) {
+export default function DayDetailPanel({ date, laborMap, projects, onReload, afterWork = null, showTasksAndEvents = true, showMeetings = true, meetingsAsHours = false, refreshKey }) {
   const [data, setData] = useState({ work: [], todos: [], events: [], meetings: [] });
   const [loading, setLoading] = useState(true);
   const [insertTarget, setInsertTarget] = useState(null);
@@ -51,6 +52,7 @@ export default function DayDetailPanel({ date, laborMap, projects, onReload }) {
   // Meeting notes / create modal state
   const [notesEditor, setNotesEditor] = useState(null); // { meetingType, meetingRef, meetingDate }
   const [showCreateMeeting, setShowCreateMeeting] = useState(false);
+  const [editingMeetingId, setEditingMeetingId] = useState(null);
 
   const noteTextareaRef = useRef(null);
 
@@ -72,6 +74,14 @@ export default function DayDetailPanel({ date, laborMap, projects, onReload }) {
     reload();
   }, [date]);
 
+  // Refresco silencioso cuando el padre cambia datos que se muestran aquí (asistencia, proyecto de reuniones…)
+  useEffect(() => {
+    if (refreshKey === undefined) return;
+    let cancelled = false;
+    api.getDay(date).then(d => { if (!cancelled) setData(d); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [refreshKey]);
+
   const toggleWorkNote = (workId) => {
     setOpenWorkNotes(prev => ({ ...prev, [workId]: !prev[workId] }));
   };
@@ -80,6 +90,14 @@ export default function DayDetailPanel({ date, laborMap, projects, onReload }) {
   const effectiveType = effectiveLabor(parsed, laborMap);
   const workHours = data.work.reduce((a, w) => a + (w.hours || 0), 0);
   const meetHours = calcMeetingHours(data.meetings);
+  // Reuniones a las que asisto, mostradas como horas (solo lectura: ya cuentan en el total)
+  const meetingEntries = !meetingsAsHours ? [] : (data.meetings || []).flatMap(m => {
+    if (m.attending === false || m.attending === 0 || m.allDay || !m.startTime || !m.endTime) return [];
+    const [sh, sm] = m.startTime.split(':').map(Number);
+    const [eh, em] = m.endTime.split(':').map(Number);
+    const mins = (eh * 60 + em) - (sh * 60 + sm);
+    return mins > 0 ? [{ ...m, hours: mins / 60 }] : [];
+  });
   const totalHours = workHours + meetHours;
   const draftHours = Number.parseFloat(newHours);
   const previewHours = totalHours + (Number.isFinite(draftHours) && draftHours > 0 ? draftHours : 0);
@@ -229,8 +247,111 @@ export default function DayDetailPanel({ date, laborMap, projects, onReload }) {
         {/* ---- Work hours ---- */}
         <section className="day-section">
           <h4 className="day-section-title work-section-title"><Clock3 size={14} /> Horas de trabajo</h4>
-          {data.work.length > 0 && (
+                   <form className="work-add-form" onSubmit={addWork}>
+                     <div className="work-add-row">
+                       <div className="work-hours-field">
+                         <Clock3 size={14} aria-hidden="true" />
+                         <input
+                           type="number" step="0.25" min="0" max="24"
+                           placeholder="0.00"
+                           aria-label="Horas trabajadas"
+                           value={newHours}
+                           onChange={e => setNewHours(e.target.value)}
+                           className="inline-input hours-input"
+                         />
+                         <span>h</span>
+                       </div>
+                       <FlowbiteDropdown
+                         className="inline-select work-project-select"
+                         value={newProjectId}
+                         onChange={setNewProjectId}
+                         options={[
+                           { value: '', label: 'Sin proyecto', color: '' },
+                           ...projects.map(p => ({ value: String(p.id), label: p.name, color: p.color })),
+                         ]}
+                         ariaLabel="Proyecto"
+                       />
+                       <button type="submit" className="btn-add work-add-submit" disabled={!newHours} title="Añadir horas" aria-label="Añadir horas"><Plus size={17} /></button>
+                     </div>
+                     <textarea
+                       ref={noteTextareaRef}
+                       placeholder="Notas (opcional) · arrastra aquí tareas"
+                       aria-label="Notas de las horas trabajadas"
+                       value={newNote}
+                       onChange={e => setNewNote(e.target.value)}
+                       onDragOver={e => {
+                         e.preventDefault();
+                         e.currentTarget.classList.add('drag-over');
+                       }}
+                       onDragLeave={e => {
+                         e.currentTarget.classList.remove('drag-over');
+                       }}
+                       onDrop={e => {
+                         e.preventDefault();
+                         e.currentTarget.classList.remove('drag-over');
+                         const droppedText = e.dataTransfer.getData('text/plain');
+                         if (droppedText) {
+                           const noteLine = `[TAREA] ${droppedText}`;
+                           setNewNote(prev => prev ? `${prev}\n${noteLine}` : noteLine);
+                         }
+                       }}
+                       className="inline-textarea"
+                       rows={1}
+                       onInput={e => { e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 'px'; }}
+                     />
+                   </form>          {(data.work.length > 0 || meetingEntries.length > 0) && (
             <ul className="day-entries">
+              {meetingEntries.map(m => (
+                <li key={`meeting-${m.uid}`} className="day-entry work-entry-card work-entry-meeting">
+                  <span className="day-entry-swatch" style={{ background: m.project_color || (m.isCustom ? '#a78bfa' : '#94a3b8') }} />
+                  <div className="day-entry-info">
+                    <div className="day-entry-time"><span>{m.hours.toFixed(2)}</span><small>h</small></div>
+                    <div className="day-entry-meeting-name" title={m.title}>📅 {m.title}</div>
+                    <div className="day-entry-project">{m.project_name || 'Sin proyecto'}</div>
+                  </div>
+                  <div className="day-entry-actions">
+                    <ItemActionsMenu
+                      ariaLabel="Opciones de reunión"
+                      actions={[
+                        {
+                          label: 'Asignar proyecto',
+                          icon: FolderKanban,
+                          submenu: [
+                            ...(m.project_id ? [{ key: 'none', label: 'Sin proyecto', onClick: async () => { await api.setMeetingProject(m.uid, date, null); reload(); onReload?.(); } }] : []),
+                            ...projects.map((p, i) => ({
+                              key: p.id, label: p.name, color: p.color, active: p.id === m.project_id, index: i,
+                              onClick: async () => { await api.setMeetingProject(m.uid, date, p.id); reload(); onReload?.(); },
+                            })),
+                          ],
+                        },
+                        {
+                          label: 'Notas',
+                          icon: FileText,
+                          onClick: () => setNotesEditor({
+                            meetingType: m.isCustom ? 'custom' : 'outlook',
+                            meetingRef: m.isCustom ? String(m.customId) : m.uid,
+                            meetingDate: date,
+                            meetingTitle: m.title,
+                            projectName: m.project_name || '',
+                          }),
+                        },
+                        ...(m.isCustom ? [
+                          { label: 'Editar', icon: Pencil, onClick: () => setEditingMeetingId(m.customId) },
+                          {
+                            label: 'Eliminar', icon: Trash2, danger: true,
+                            onClick: async () => {
+                              if (m.repeat === 'weekly' && !confirm('Esta reunión se repite cada semana. Se eliminará la serie completa. ¿Continuar?')) return;
+                              await api.deleteCustomMeeting(m.customId);
+                              reload();
+                              onReload?.();
+                            },
+                          },
+                        ] : []),
+                      ]}
+                    />
+                  </div>
+                </li>
+              ))}
               {data.work.map(w => (
                 <li
                   key={w.id}
@@ -278,8 +399,8 @@ export default function DayDetailPanel({ date, laborMap, projects, onReload }) {
                           value={editProjectId}
                           onChange={setEditProjectId}
                           options={[
-                            { value: '', label: 'Sin proyecto' },
-                            ...projects.map(p => ({ value: String(p.id), label: p.name })),
+                            { value: '', label: 'Sin proyecto', color: '' },
+                            ...projects.map(p => ({ value: String(p.id), label: p.name, color: p.color })),
                           ]}
                           ariaLabel="Proyecto"
                         />
@@ -306,7 +427,6 @@ export default function DayDetailPanel({ date, laborMap, projects, onReload }) {
                       </>
                     ) : (
                       <>
-                        <button type="button" className="btn-edit" onClick={() => startEditWork(w)} title="Editar" aria-label="Editar horas"><Pencil size={13} /></button>
                         {w.note && (
                           <button
                             type="button"
@@ -317,11 +437,19 @@ export default function DayDetailPanel({ date, laborMap, projects, onReload }) {
                             aria-label={openWorkNotes[w.id] ? 'Ocultar nota' : 'Ver nota'}
                           ><ChevronRight size={13} /></button>
                         )}
-                        <button type="button" className="btn-delete" onClick={() => deleteWork(w.id)} title="Eliminar" aria-label="Eliminar horas"><X size={14} /></button>
+                        <ItemActionsMenu
+                          ariaLabel="Opciones de horas"
+                          actions={[
+                            { label: 'Editar', icon: Pencil, onClick: () => startEditWork(w) },
+                            { label: 'Eliminar', icon: Trash2, danger: true, onClick: () => deleteWork(w.id) },
+                          ]}
+                        />
                       </>
                     )}
                   </div>
                   {editingWorkId !== w.id && w.note && (
+                    <div className="day-entry-note-wrap" aria-hidden={!openWorkNotes[w.id]}>
+                    <div className="day-entry-note-clip">
                     <div className="day-entry-note">
                       {w.note.split('\n').map((line, i) => {
                         const isTask = line.startsWith('[TAREA] ');
@@ -358,66 +486,19 @@ export default function DayDetailPanel({ date, laborMap, projects, onReload }) {
                         );
                       })}
                     </div>
+                    </div>
+                    </div>
                   )}
                 </li>
               ))}
             </ul>
           )}
-          <form className="work-add-form" onSubmit={addWork}>
-            <div className="work-add-row">
-              <div className="work-hours-field">
-                <Clock3 size={14} aria-hidden="true" />
-                <input
-                  type="number" step="0.25" min="0" max="24"
-                  placeholder="0.00"
-                  aria-label="Horas trabajadas"
-                  value={newHours}
-                  onChange={e => setNewHours(e.target.value)}
-                  className="inline-input hours-input"
-                />
-                <span>h</span>
-              </div>
-              <FlowbiteDropdown
-                className="inline-select work-project-select"
-                value={newProjectId}
-                onChange={setNewProjectId}
-                options={[
-                  { value: '', label: 'Sin proyecto' },
-                  ...projects.map(p => ({ value: String(p.id), label: p.name })),
-                ]}
-                ariaLabel="Proyecto"
-              />
-              <button type="submit" className="btn-add work-add-submit" disabled={!newHours} title="Añadir horas" aria-label="Añadir horas"><Plus size={17} /></button>
-            </div>
-            <textarea
-              ref={noteTextareaRef}
-              placeholder="Notas (opcional) · arrastra aquí tareas"
-              aria-label="Notas de las horas trabajadas"
-              value={newNote}
-              onChange={e => setNewNote(e.target.value)}
-              onDragOver={e => {
-                e.preventDefault();
-                e.currentTarget.classList.add('drag-over');
-              }}
-              onDragLeave={e => {
-                e.currentTarget.classList.remove('drag-over');
-              }}
-              onDrop={e => {
-                e.preventDefault();
-                e.currentTarget.classList.remove('drag-over');
-                const droppedText = e.dataTransfer.getData('text/plain');
-                if (droppedText) {
-                  const noteLine = `[TAREA] ${droppedText}`;
-                  setNewNote(prev => prev ? `${prev}\n${noteLine}` : noteLine);
-                }
-              }}
-              className="inline-textarea"
-              rows={1}
-              onInput={e => { e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 'px'; }}
-            />
-          </form>
         </section>
 
+        {afterWork}
+
+        {showTasksAndEvents && (
+        <>
         {/* ---- Todos ---- */}
         <section className="day-section">
           <h4 className="day-section-title">✅ Tareas</h4>
@@ -558,8 +639,11 @@ export default function DayDetailPanel({ date, laborMap, projects, onReload }) {
             <button type="submit" className="btn-add" disabled={!eventTitle.trim()}>+</button>
           </form>
         </section>
+        </>
+        )}
 
         {/* ---- Meetings ---- */}
+        {showMeetings && (
         <section className="day-section">
           <div className="day-section-header">
             <h4 className="day-section-title">📞 Reuniones</h4>
@@ -600,7 +684,7 @@ export default function DayDetailPanel({ date, laborMap, projects, onReload }) {
                           }}
                           options={[
                             { value: '', label: m.project_id ? '✕ Quitar proyecto' : '+ Asignar proyecto…' },
-                            ...projects.map(p => ({ value: String(p.id), label: p.name })),
+                            ...projects.map(p => ({ value: String(p.id), label: p.name, color: p.color })),
                           ]}
                           ariaLabel="Asignar proyecto a reunión"
                         />
@@ -620,6 +704,13 @@ export default function DayDetailPanel({ date, laborMap, projects, onReload }) {
                             }}
                             title={m.attending === false || m.attending === 0 ? 'Marcar como asisto (contará horas)' : 'Marcar como no asisto (no contará horas)'}
                           >{m.attending === false || m.attending === 0 ? '✕' : '✓'}</button>
+                        )}
+                        {m.isCustom && (
+                          <button
+                            className="btn btn-ghost btn-sm"
+                            onClick={() => setEditingMeetingId(m.customId)}
+                            title="Editar reunión"
+                          >✏️ Editar</button>
                         )}
                         {m.isCustom && (
                           <button
@@ -649,6 +740,7 @@ export default function DayDetailPanel({ date, laborMap, projects, onReload }) {
             <div className="day-empty-hint">Sin reuniones</div>
           )}
         </section>
+        )}
       </div>
 
       {/* Meeting Notes Editor Modal */}
@@ -668,6 +760,14 @@ export default function DayDetailPanel({ date, laborMap, projects, onReload }) {
         <CreateMeetingModal
           initialDate={date}
           onClose={() => setShowCreateMeeting(false)}
+          onCreated={() => { reload(); onReload?.(); }}
+        />
+      )}
+
+      {editingMeetingId != null && (
+        <CreateMeetingModal
+          meetingId={editingMeetingId}
+          onClose={() => setEditingMeetingId(null)}
           onCreated={() => { reload(); onReload?.(); }}
         />
       )}
