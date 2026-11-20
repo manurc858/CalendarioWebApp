@@ -26,6 +26,7 @@
   }
   .main > section[role="tabpanel"] { min-width: 0; }
   .sidebar { display: none; }
+  .app > .main { grid-column: 1; }
   .main {
     padding: 14px 12px var(--mobile-bottom-reserve);
   }

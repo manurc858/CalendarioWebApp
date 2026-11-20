@@ -349,6 +349,8 @@ export default function ProjectsPage({ projects, stats, cursor, laborMap, reload
               const isActive = selected === project.id;
               const isHibernated = project.is_active === 0;
               const percentLabel = project.expectedHours > 0 ? `${project.progressPct.toFixed(0)}%` : '—';
+              const monthSharePct = availableMonthHours > 0 ? (project.workedHours / availableMonthHours) * 100 : null;
+              const monthShareLabel = monthSharePct === null ? '' : `${monthSharePct.toFixed(0)}%`;
 
               return (
                 <button
@@ -378,6 +380,9 @@ export default function ProjectsPage({ projects, stats, cursor, laborMap, reload
                         style={{ width: `${project.progressPct}%`, background: project.color }}
                       />
                     </div>
+                    <span className="proj-list-share" title="Horas del proyecto sobre el total de horas laborables del mes">
+                      {monthSharePct === null ? 'Sin horas laborables este mes' : `${monthShareLabel} de las horas laborables del mes`}
+                    </span>
                   </span>
                 </button>
               );

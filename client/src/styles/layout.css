@@ -144,5 +144,6 @@
 .monthly-right {
   position: sticky; top: 22px;
   isolation: isolate;
+  max-height: calc(100vh - 44px); overflow-y: auto;
 }
 

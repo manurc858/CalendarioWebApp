@@ -319,9 +319,15 @@ app.put('/api/todos/:id', ah(async (req, res) => {
   const nextOrder = movedDate
     ? (await dbGet('SELECT COALESCE(MAX(sort_order), 0) + 1 AS value FROM todos WHERE date IS NOT DISTINCT FROM ?', newDate ?? null)).value
     : current.sort_order;
+  // Al mover una tarea multi-día sin indicar end_date, se conserva su duración
+  let endDate = 'end_date' in req.body ? end_date : current.end_date;
+  if (!('end_date' in req.body) && movedDate && current.end_date && current.date && newDate) {
+    const spanDays = Math.round((new Date(current.end_date + 'T00:00:00') - new Date(current.date + 'T00:00:00')) / 86400000);
+    endDate = addDaysIso(newDate, spanDays);
+  }
   await dbRun('UPDATE todos SET text=?, done=?, date=?, sort_order=?, end_date=?, extended=?, priority=? WHERE id=?',
     text ?? current.text, done ?? current.done, newDate, nextOrder,
-    'end_date' in req.body ? end_date : current.end_date,
+    endDate,
     extended === undefined ? current.extended : (extended ? 1 : 0),
     priority || current.priority,
     Number(req.params.id));

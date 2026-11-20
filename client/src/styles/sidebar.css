@@ -4,6 +4,15 @@
   color: var(--ink);
   border-right: 1px solid var(--line);
   overflow: auto;
+  position: fixed;
+  top: 0; left: 0; bottom: 0;
+  width: 56px;
+  z-index: 800;
+  transition: width .25s ease, box-shadow .25s ease;
+}
+.sidebar.open {
+  width: clamp(280px, 24vw, 340px);
+  box-shadow: 8px 0 24px rgba(21, 27, 38, .18);
 }
 .sidebar-collapsed-inner {
   display: flex; justify-content: center; padding: 12px 0;

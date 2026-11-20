@@ -95,8 +95,6 @@
 .popover-body::-webkit-scrollbar-thumb { background: var(--line); border-radius: 6px; }
 
 @media (max-width: 960px) {
-  .app { grid-template-columns: 1fr; }
-  .sidebar { position: sticky; top: 0; max-height: 50vh; }
   .main { padding: 14px; }
   .cal-grid { gap: 4px; padding: 6px; }
   .hours-grid { grid-template-columns: 1fr; }

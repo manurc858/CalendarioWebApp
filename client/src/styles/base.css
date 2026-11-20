@@ -90,10 +90,10 @@ input[type="checkbox"]:disabled {
 
 .app {
   display: grid;
-  grid-template-columns: clamp(280px, 24vw, 340px) 1fr;
+  /* La columna fija es el riel colapsado; la sidebar abierta se superpone */
+  grid-template-columns: 56px minmax(0, 1fr);
   min-height: 100vh;
   min-height: 100dvh;
-  transition: grid-template-columns .25s ease;
 }
-.app.sidebar-collapsed { grid-template-columns: 56px 1fr; }
+.app > .main { grid-column: 2; }
 

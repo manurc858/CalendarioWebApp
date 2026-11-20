@@ -61,18 +61,22 @@ export default function Calendar({ cursor, today, onSelect, laborMap, daySummari
               title={eff.label || ''}
               aria-label={ariaLabel}
               onDragOver={e => {
-                if (onDropTodo) {
+                if (onDropTodo && e.dataTransfer.types.includes('application/x-todo-id')) {
                   e.preventDefault();
                   e.dataTransfer.dropEffect = 'move';
                   setDropTarget(dIso);
                 }
               }}
-              onDragLeave={() => setDropTarget(null)}
+              onDragLeave={e => {
+                if (e.relatedTarget && e.currentTarget.contains(e.relatedTarget)) return;
+                setDropTarget(null);
+              }}
               onDrop={e => {
                 e.preventDefault();
                 setDropTarget(null);
                 const todoId = e.dataTransfer.getData('application/x-todo-id');
-                if (todoId && onDropTodo) onDropTodo(Number(todoId), dIso);
+                const sourceDate = e.dataTransfer.getData('application/x-todo-date');
+                if (todoId && onDropTodo && sourceDate !== dIso) onDropTodo(Number(todoId), dIso);
               }}
             >
               <div className="cal-cell-inner">

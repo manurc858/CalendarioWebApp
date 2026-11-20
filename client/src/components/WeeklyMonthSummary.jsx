@@ -1,11 +1,14 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { LABOR_TYPES, MONTH_NAMES, iso, isWeekend } from '../utils.js';
+
+const isTodoDrag = e => e.dataTransfer.types.includes('application/x-todo-id');
 
 // Resumen del mes con el mismo estilo que cada mes de la vista anual
 export default function WeeklyMonthSummary({
-  monthIso, selectedIso, todayIso, laborMap, eventDates, hoursByDay, onSelect
+  monthIso, selectedIso, todayIso, laborMap, eventDates, hoursByDay, onSelect, onDropTodo
 }) {
   const [y, m] = monthIso.split('-').map(Number);
+  const [dropTarget, setDropTarget] = useState(null);
 
   const days = useMemo(() => {
     const arr = [];
@@ -44,11 +47,24 @@ export default function WeeklyMonthSummary({
               <button
                 key={i}
                 type="button"
-                className={`year-day ${key === todayIso ? 'yv-today' : ''} ${key === selectedIso ? 'wv-month-selected' : ''} ${isSpecial ? 'special' : ''} ${eventDates.has(key) ? 'has-event' : ''}`}
+                className={`year-day ${key === todayIso ? 'yv-today' : ''} ${key === selectedIso ? 'wv-month-selected' : ''} ${isSpecial ? 'special' : ''} ${eventDates.has(key) ? 'has-event' : ''} ${dropTarget === key ? 'drop-hover' : ''}`}
                 style={style}
                 title={[label, hoursLabel].filter(Boolean).join(' · ')}
                 aria-pressed={key === selectedIso}
                 onClick={() => onSelect(key)}
+                onDragOver={e => {
+                  if (!onDropTodo || !isTodoDrag(e)) return;
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = 'move';
+                  if (dropTarget !== key) setDropTarget(key);
+                }}
+                onDragLeave={() => setDropTarget(null)}
+                onDrop={e => {
+                  e.preventDefault();
+                  setDropTarget(null);
+                  const todoId = Number(e.dataTransfer.getData('application/x-todo-id'));
+                  if (todoId && onDropTodo) onDropTodo(todoId, key, e.dataTransfer.getData('application/x-todo-date'));
+                }}
               >
                 {d.getDate()}
                 {eventDates.has(key) && <span className="yv-event-dot" />}

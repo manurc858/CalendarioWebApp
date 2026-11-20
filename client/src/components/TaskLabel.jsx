@@ -11,6 +11,10 @@ export default function TaskLabel({ todo, onChanged, compact = false }) {
   const [subtaskText, setSubtaskText] = useState('');
   const [startDate, setStartDate] = useState(todo.date || '');
   const [endDate, setEndDate] = useState(todo.end_date || todo.date || '');
+  useEffect(() => {
+    setStartDate(todo.date || '');
+    setEndDate(todo.end_date || todo.date || '');
+  }, [todo.date, todo.end_date]);
   const subtasks = todo.subtasks || [];
   const completed = subtasks.filter(subtask => !!subtask.done).length;
   const status = completed === subtasks.length && subtasks.length > 0 ? 'completed' : completed > 0 ? 'in_progress' : 'pending';

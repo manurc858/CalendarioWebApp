@@ -1,8 +1,7 @@
-import { lazy, Suspense, useEffect, useMemo, useState, useCallback } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { api } from './api.js';
 import { MONTH_NAMES, iso, cacheGet, cacheSet, getThemePref, setThemePref } from './utils.js';
 import Calendar from './components/Calendar.jsx';
-import DayDetailPanel from './components/DayDetailPanel.jsx';
 import LaborSidebar from './components/LaborSidebar.jsx';
 import WeeklyView from './components/WeeklyView.jsx';
 import MobileNav from './components/MobileNav.jsx';
@@ -24,12 +23,24 @@ export default function App({ onLogout = null }) {
   const today = new Date();
   const [cursor, setCursor] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
   const [selectedDay, setSelectedDay] = useState(iso(today));
+  const [dayPanelTick, setDayPanelTick] = useState(0);
   const [view, setView] = useState('weekly'); // 'weekly' | 'monthly' | 'annual' | 'projects' | 'notes'
   const [calendarTab, setCalendarTab] = useState('weekly'); // última sub-vista de calendario activa
   const [activeType, setActiveType] = useState('vacaciones');
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const sidebarRef = useRef(null);
   const [theme, setTheme] = useState(getThemePref);
   const [paletteOpen, setPaletteOpen] = useState(false);
+
+  // Clic fuera de la sidebar abierta la cierra (además del botón).
+  useEffect(() => {
+    if (!sidebarOpen || paletteOpen) return undefined;
+    const handlePointerDown = (e) => {
+      if (sidebarRef.current && !sidebarRef.current.contains(e.target)) setSidebarOpen(false);
+    };
+    document.addEventListener('pointerdown', handlePointerDown);
+    return () => document.removeEventListener('pointerdown', handlePointerDown);
+  }, [sidebarOpen, paletteOpen]);
   // DESACTIVADO (no eliminar): estado del PixelAgent (agente IA gemma)
   // const [showPixelAgent, setShowPixelAgent] = useState(false);
 
@@ -392,7 +403,7 @@ export default function App({ onLogout = null }) {
           Sin conexión con el servidor — reintentando…
         </div>
       )}
-      <aside className="sidebar">
+      <aside ref={sidebarRef} className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
         {sidebarOpen ? (
           <div className="sidebar-inner">
             <div className="sidebar-head">
@@ -615,16 +626,19 @@ export default function App({ onLogout = null }) {
                   onDropTodo={async (todoId, dateIso) => {
                     await api.updateTodo(todoId, { date: dateIso });
                     reloadMonth();
+                    setDayPanelTick(t => t + 1);
                   }}
                 />
               </div>
               <div className="monthly-right">
-                <DayDetailPanel
-                  key={selectedDay}
+                <WeeklyView
+                  dayMode
                   date={selectedDay}
+                  today={today}
+                  onReload={reloadMonth}
                   laborMap={laborMap}
                   projects={activeProjects}
-                  onReload={reloadMonth}
+                  refreshSignal={dayPanelTick}
                 />
               </div>
             </div>

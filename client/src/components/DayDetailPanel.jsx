@@ -25,10 +25,14 @@ function insertTodoAt(todos, draggedId, beforeId = null) {
   ];
 }
 
-function getBeforeIdByPointer(event, currentId, nextId) {
-  const rect = event.currentTarget.getBoundingClientRect();
-  const ratio = (event.clientY - rect.top) / Math.max(rect.height, 1);
-  return ratio <= 0.5 ? currentId : (nextId ?? null);
+// Tarea antes de la que se insertaría lo arrastrado según la altura del puntero (null = al final)
+function getBeforeIdByPointer(container, clientY) {
+  const nodes = container.querySelectorAll('[data-todo-id]');
+  for (const node of nodes) {
+    const rect = node.getBoundingClientRect();
+    if (clientY < rect.top + rect.height / 2) return Number(node.dataset.todoId);
+  }
+  return null;
 }
 
 export default function DayDetailPanel({ date, laborMap, projects, onReload, afterWork = null, showTasksAndEvents = true, showMeetings = true, meetingsAsHours = false, refreshKey }) {
@@ -174,22 +178,51 @@ export default function DayDetailPanel({ date, laborMap, projects, onReload, aft
     onReload?.();
   };
 
-  const moveTodoWithinDay = async (todoId, beforeId = null, sourceDate = date) => {
-    const sourceMatchesDay = (sourceDate || '') === date;
-    const baseTodos = sourceMatchesDay ? data.todos : [...data.todos, { id: todoId, date }];
+  const moveTodoWithinDay = async (todoId, beforeId = null, movedHere = false) => {
+    const known = data.todos.some(todo => todo.id === todoId);
+    const baseTodos = (known ? data.todos : [...data.todos, { id: todoId, date }])
+      .map(todo => (todo.id === todoId && movedHere ? { ...todo, date } : todo));
     const reorderedTodos = insertTodoAt(baseTodos, todoId, beforeId);
-    const orderedIds = reorderedTodos.map(todo => todo.id);
-    if (orderedIds.length === 0) return;
-    setData(prev => ({ ...prev, todos: reorderedTodos }));
+    // reorderTodos solo admite las tareas que empiezan este día (no las continuaciones multi-día)
+    const orderedIds = reorderedTodos.filter(todo => todo.date === date).map(todo => todo.id);
+    if (known) setData(prev => ({ ...prev, todos: reorderedTodos }));
+    setInsertTarget(null);
     try {
-      await api.reorderTodos(date, orderedIds);
+      if (orderedIds.length > 0) await api.reorderTodos(date, orderedIds);
+    } catch { /* se recarga el estado real justo debajo */ }
+    reload();
+    onReload?.();
+  };
+
+  const dragOverTodos = e => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    const target = String(getBeforeIdByPointer(e.currentTarget, e.clientY) ?? 'end');
+    if (insertTarget !== target) setInsertTarget(target);
+  };
+
+  const dragLeaveTodos = e => {
+    if (e.relatedTarget && e.currentTarget.contains(e.relatedTarget)) return;
+    setInsertTarget(null);
+  };
+
+  const dropTodo = async e => {
+    e.preventDefault();
+    e.stopPropagation();
+    const beforeId = getBeforeIdByPointer(e.currentTarget, e.clientY);
+    setInsertTarget(null);
+    const todoId = Number(e.dataTransfer.getData('application/x-todo-id'));
+    if (!todoId) return;
+    const sourceDate = e.dataTransfer.getData('application/x-todo-date');
+    const movedHere = (sourceDate || '') !== date;
+    if (!movedHere && beforeId === todoId) return;
+    try {
+      if (movedHere) await api.updateTodo(todoId, { date });
     } catch {
       reload();
       return;
     }
-    setInsertTarget(null);
-    reload();
-    onReload?.();
+    await moveTodoWithinDay(todoId, beforeId, movedHere);
   };
 
   const addEvent = async (e) => {
@@ -301,8 +334,8 @@ export default function DayDetailPanel({ date, laborMap, projects, onReload, aft
                      />
                    </form>          {(data.work.length > 0 || meetingEntries.length > 0) && (
             <ul className="day-entries">
-              {meetingEntries.map(m => (
-                <li key={`meeting-${m.uid}`} className="day-entry work-entry-card work-entry-meeting">
+              {meetingEntries.map((m, i) => (
+                <li key={`meeting-${m.uid}-${i}`} className="day-entry work-entry-card work-entry-meeting">
                   <span className="day-entry-swatch" style={{ background: m.project_color || (m.isCustom ? '#a78bfa' : '#94a3b8') }} />
                   <div className="day-entry-info">
                     <div className="day-entry-time"><span>{m.hours.toFixed(2)}</span><small>h</small></div>
@@ -503,57 +536,26 @@ export default function DayDetailPanel({ date, laborMap, projects, onReload, aft
         <section className="day-section">
           <h4 className="day-section-title">✅ Tareas</h4>
           {data.todos.length > 0 && (
-            <ul className="day-entries">
-              <li
-                className={`todo-drop-slot day-drop-slot ${insertTarget === 'start' ? 'active' : ''}`}
-                onDragOver={e => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  e.dataTransfer.dropEffect = 'move';
-                  setInsertTarget('start');
-                }}
-                onDrop={async e => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  const todoId = e.dataTransfer.getData('application/x-todo-id');
-                  const sourceDate = e.dataTransfer.getData('application/x-todo-date');
-                  if (!todoId) return;
-                  if ((sourceDate || '') !== date) {
-                    await api.updateTodo(Number(todoId), { date });
-                  }
-                  await moveTodoWithinDay(Number(todoId), data.todos[0]?.id ?? null, sourceDate);
-                }}
-              />
+            <ul
+              className="day-entries"
+              onDragOver={dragOverTodos}
+              onDragLeave={dragLeaveTodos}
+              onDrop={dropTodo}
+            >
               {data.todos.map((t, idx) => (
                 <li key={t.id}>
                   <div
-                    className={`day-entry todo-entry ${insertTarget === String(t.id) ? 'drop-before' : ''} ${insertTarget === String(data.todos[idx + 1]?.id ?? 'end') ? 'drop-after' : ''}`}
+                    data-todo-id={t.id}
+                    className={`day-entry todo-entry ${insertTarget === String(t.id) ? 'drop-before' : ''} ${idx === data.todos.length - 1 && insertTarget === 'end' ? 'drop-after' : ''}`}
                     draggable
                     onDragStart={e => {
                       e.dataTransfer.setData('application/x-todo-id', String(t.id));
-                      e.dataTransfer.setData('application/x-todo-date', t.date || '');
+                      // el día mostrado (en tareas multi-día puede ser una continuación)
+                      e.dataTransfer.setData('application/x-todo-date', date);
                       e.dataTransfer.setData('text/plain', t.text);
                       e.dataTransfer.effectAllowed = 'move';
                     }}
-                    onDragOver={e => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      e.dataTransfer.dropEffect = 'move';
-                      const beforeId = getBeforeIdByPointer(e, t.id, data.todos[idx + 1]?.id);
-                      setInsertTarget(String(beforeId ?? 'end'));
-                    }}
-                    onDrop={async e => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      const todoId = e.dataTransfer.getData('application/x-todo-id');
-                      const sourceDate = e.dataTransfer.getData('application/x-todo-date');
-                      if (!todoId) return;
-                      const beforeId = getBeforeIdByPointer(e, t.id, data.todos[idx + 1]?.id);
-                      if ((sourceDate || '') !== date) {
-                        await api.updateTodo(Number(todoId), { date });
-                      }
-                      await moveTodoWithinDay(Number(todoId), beforeId, sourceDate);
-                    }}
+                    onDragEnd={() => setInsertTarget(null)}
                     title="Arrastra esta tarea para reordenarla o vincularla a notas de trabajo"
                   >
                     <input type="checkbox" checked={!!t.done}
@@ -567,26 +569,6 @@ export default function DayDetailPanel({ date, laborMap, projects, onReload, aft
                   </div>
                 </li>
               ))}
-              <li
-                className={`todo-drop-slot day-drop-slot ${insertTarget === 'end' ? 'active' : ''}`}
-                onDragOver={e => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  e.dataTransfer.dropEffect = 'move';
-                  setInsertTarget('end');
-                }}
-                onDrop={async e => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  const todoId = e.dataTransfer.getData('application/x-todo-id');
-                  const sourceDate = e.dataTransfer.getData('application/x-todo-date');
-                  if (!todoId) return;
-                  if ((sourceDate || '') !== date) {
-                    await api.updateTodo(Number(todoId), { date });
-                  }
-                  await moveTodoWithinDay(Number(todoId), null, sourceDate);
-                }}
-              />
             </ul>
           )}
           <form className="inline-form" onSubmit={addTodo}>
@@ -651,14 +633,14 @@ export default function DayDetailPanel({ date, laborMap, projects, onReload, aft
           </div>
           {data.meetings && data.meetings.length > 0 && (
             <ul className="day-entries">
-              {data.meetings.map(m => {
+              {data.meetings.map((m, i) => {
                 const mMins = (!m.allDay && m.startTime && m.endTime)
                   ? (() => { const [sh,sm] = m.startTime.split(':').map(Number); const [eh,em] = m.endTime.split(':').map(Number); return (eh*60+em)-(sh*60+sm); })()
                   : 0;
                 const meetingType = m.isCustom ? 'custom' : 'outlook';
                 const meetingRef = m.isCustom ? String(m.customId) : m.uid;
                 return (
-                  <li key={m.uid} className={`day-entry meeting-entry${m.project_id ? ' meeting-assigned' : ''}${m.isCustom ? ' meeting-custom' : ''}`}>
+                  <li key={`${m.uid}-${i}`} className={`day-entry meeting-entry${m.project_id ? ' meeting-assigned' : ''}${m.isCustom ? ' meeting-custom' : ''}`}>
                     <span className="day-entry-swatch" style={{ background: m.project_color || (m.isCustom ? '#a78bfa' : 'var(--line)') }} />
                     <div className="day-entry-info">
                       <div className="meeting-header">

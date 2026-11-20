@@ -28,6 +28,7 @@ export default function WeeklySidebar({ cursor, today, onReload }) {
 
   const handleDragStart = (e, todo) => {
     e.dataTransfer.setData('application/x-todo-id', String(todo.id));
+    e.dataTransfer.setData('application/x-todo-date', todo.date || '');
     e.dataTransfer.setData('text/plain', todo.text);
     e.dataTransfer.effectAllowed = 'move';
   };
